@@ -93,7 +93,7 @@ frontend/src/
 ```bash
 uv run python -m unittest discover -s tests
 uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-cd frontend && bun run build
+cd frontend && bun test src && bun run build
 ```
 
 并通过真实 HTTP 请求验证股票与 ETF 搜索、四周期行情与买卖点、多级别联立、榜单、实时报价与采样写入、跨域响应头和错误响应；不得仅以导入成功或构建成功代替端到端验证。

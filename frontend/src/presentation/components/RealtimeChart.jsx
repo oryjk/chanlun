@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
+import { getSessionBreaks, getTradingDuration, toTradingMinute, tradingMinuteToClock } from '../../domain/marketHours.js'
 
 function formatTime(value, includeSeconds = false) {
   const date = new Date(value)
@@ -8,43 +9,10 @@ function formatTime(value, includeSeconds = false) {
   return includeSeconds ? `${time}:${pad(date.getSeconds())}` : time
 }
 
-function zonedParts(value, timeZone) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date(value))
-  return Object.fromEntries(
-    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]),
-  )
-}
-
-function zonedTimeToUtc(referenceTime, timeZone, hour, minute) {
-  const local = zonedParts(referenceTime, timeZone)
-  const guess = Date.UTC(local.year, local.month - 1, local.day, hour, minute)
-  const actual = zonedParts(guess, timeZone)
-  const offset = Date.UTC(
-    actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second,
-  ) - guess
-  return guess - offset
-}
-
-export function getSessionBounds(secid, referenceTime) {
-  const market = secid.split('.')[0]
-  const timeZone = ['105', '106', '107'].includes(market)
-    ? 'America/New_York'
-    : market === '116' ? 'Asia/Hong_Kong' : 'Asia/Shanghai'
-  const closeHour = ['105', '106', '107', '116'].includes(market) ? 16 : 15
-  return {
-    min: zonedTimeToUtc(referenceTime, timeZone, 9, 30),
-    max: zonedTimeToUtc(referenceTime, timeZone, closeHour, 0),
-  }
-}
-
 function buildOption(points, secid, previousClose) {
   const latest = points.at(-1)
-  const session = getSessionBounds(secid, latest?.time || new Date())
+  // 横轴为去掉休市后的交易分钟，午休前后两段首尾相接
+  const toX = (point) => toTradingMinute(secid, point.time)
   const prices = points.map((point) => point.price)
   const highest = Math.max(...prices, previousClose)
   const lowest = Math.min(...prices, previousClose)
@@ -67,16 +35,17 @@ function buildOption(points, secid, previousClose) {
       textStyle: { color: '#2d302d', fontSize: 12 },
       formatter: (params) => {
         const point = params[0]
-        return point ? `${formatTime(point.value[0], true)}<br/><b>${Number(point.value[1]).toFixed(3)}</b>` : ''
+        return point ? `${formatTime(point.value[2], true)}<br/><b>${Number(point.value[1]).toFixed(3)}</b>` : ''
       },
     },
     xAxis: {
-      type: 'time',
-      min: session.min,
-      max: session.max,
+      type: 'value',
+      min: 0,
+      max: getTradingDuration(secid),
+      interval: 30,
       axisLine: { lineStyle: { color: '#d8d8d1' } },
       axisTick: { show: false },
-      axisLabel: { color: '#858a82', fontSize: 11, formatter: (value) => formatTime(value), hideOverlap: true },
+      axisLabel: { color: '#858a82', fontSize: 11, formatter: (value) => tradingMinuteToClock(secid, value), hideOverlap: true, alignMinLabel: 'left', alignMaxLabel: 'right' },
       splitLine: { show: false },
     },
     yAxis: [
@@ -105,7 +74,7 @@ function buildOption(points, secid, previousClose) {
       {
         name: '实时价格',
         type: 'line',
-        data: points.map((point) => [point.time, point.price]),
+        data: points.map((point) => [toX(point), point.price, point.time]),
         showSymbol: false,
         smooth: 0.12,
         lineStyle: { color: '#327d6b', width: 2.2 },
@@ -116,14 +85,21 @@ function buildOption(points, secid, previousClose) {
           symbolSize: 8,
           label: { show: false },
           itemStyle: { color: '#327d6b', borderColor: '#d8f0e5', borderWidth: 3 },
-          data: latest ? [{ coord: [latest.time, latest.price] }] : [],
+          data: latest ? [{ coord: [toX(latest), latest.price] }] : [],
         },
         markLine: {
           silent: true,
           symbol: 'none',
           lineStyle: { color: '#b48a42', type: 'dashed', width: 1.2 },
           label: { show: false },
-          data: [{ yAxis: previousClose }],
+          data: [
+            { yAxis: previousClose },
+            ...getSessionBreaks(secid).map((position) => ({
+              xAxis: position,
+              lineStyle: { color: '#9aa49b', type: 'solid', width: 1 },
+              label: { show: true, position: 'insideEndTop', formatter: '休市', color: '#858a82', fontSize: 10 },
+            })),
+          ],
         },
       },
     ],
