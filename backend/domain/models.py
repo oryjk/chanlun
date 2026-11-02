@@ -88,6 +88,24 @@ class Pen:
     end_price: float
     high: float
     low: float
+    confirmed: bool
+
+
+@dataclass(frozen=True)
+class Segment:
+    id: int
+    direction: str
+    start_pen_index: int
+    end_pen_index: int
+    start_index: int
+    end_index: int
+    start_time: datetime
+    end_time: datetime
+    start_price: float
+    end_price: float
+    high: float
+    low: float
+    confirmed: bool
 
 
 @dataclass(frozen=True)
@@ -99,12 +117,16 @@ class Zhongshu:
     end_time: datetime
     low: float
     high: float
+    gg: float
+    dd: float
+    confirmed: bool
 
 
 @dataclass(frozen=True)
 class ChanAnalysis:
     fractals: tuple[Fractal, ...]
     pens: tuple[Pen, ...]
+    segments: tuple[Segment, ...]
     zhongshu: tuple[Zhongshu, ...]
     merged_count: int
     trend: str
@@ -127,6 +149,42 @@ class MarketSummary:
 
 
 @dataclass(frozen=True)
+class QuotePoint:
+    time: datetime
+    price: float
+
+
+@dataclass(frozen=True)
+class QuoteSeries:
+    secid: str
+    points: tuple[QuotePoint, ...]
+
+
+@dataclass(frozen=True)
+class RealtimeQuote:
+    secid: str
+    symbol: str
+    name: str
+    time: datetime
+    open: float
+    high: float
+    low: float
+    previous_close: float
+    latest: float
+    change: float
+    change_percent: float
+    volume: int
+    amount: float
+
+
+@dataclass(frozen=True)
+class MarketGuidance:
+    bias: str
+    reasons: tuple[str, ...]
+    invalidation_price: float | None
+
+
+@dataclass(frozen=True)
 class MarketSnapshot:
     instrument: Instrument
     timeframe: TimeFrame
@@ -134,3 +192,4 @@ class MarketSnapshot:
     candles: tuple[Candle, ...]
     analysis: ChanAnalysis
     summary: MarketSummary
+    guidance: MarketGuidance

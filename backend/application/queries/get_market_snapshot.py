@@ -1,12 +1,19 @@
 from ...domain.models import MarketData, MarketSnapshot, MarketSummary, TimeFrame, validate_security_id
 from ...domain.services.chan_analyzer import ChanAnalyzer
+from ...domain.services.structure_guidance import StructureGuidanceEvaluator
 from ..ports.readers import MarketDataReader
 
 
 class GetMarketSnapshotQuery:
-    def __init__(self, reader: MarketDataReader, analyzer: ChanAnalyzer):
+    def __init__(
+        self,
+        reader: MarketDataReader,
+        analyzer: ChanAnalyzer,
+        guidance_evaluator: StructureGuidanceEvaluator,
+    ):
         self._reader = reader
         self._analyzer = analyzer
+        self._guidance_evaluator = guidance_evaluator
 
     def execute(self, secid: str, timeframe: str, refresh: bool = False) -> MarketSnapshot:
         normalized_secid = validate_security_id(secid)
@@ -27,11 +34,14 @@ class GetMarketSnapshotQuery:
             low=min(candle.low for candle in candles),
             volume=sum(candle.volume for candle in candles[-20:]),
         )
+        analysis = self._analyzer.analyze(candles)
+        guidance = self._guidance_evaluator.evaluate(analysis, latest.close)
         return MarketSnapshot(
             instrument=market_data.instrument,
             timeframe=timeframe,
             timeframe_label=timeframe.label,
             candles=candles,
-            analysis=self._analyzer.analyze(candles),
+            analysis=analysis,
             summary=summary,
+            guidance=guidance,
         )

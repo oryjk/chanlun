@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ApiModel(BaseModel):
@@ -56,6 +56,23 @@ class PenResponse(ApiModel):
     end_price: float
     high: float
     low: float
+    confirmed: bool
+
+
+class SegmentResponse(ApiModel):
+    id: int
+    direction: str
+    start_pen_index: int
+    end_pen_index: int
+    start_index: int
+    end_index: int
+    start_time: datetime
+    end_time: datetime
+    start_price: float
+    end_price: float
+    high: float
+    low: float
+    confirmed: bool
 
 
 class ZhongshuResponse(ApiModel):
@@ -66,11 +83,15 @@ class ZhongshuResponse(ApiModel):
     end_time: datetime
     low: float
     high: float
+    gg: float
+    dd: float
+    confirmed: bool
 
 
 class ChanAnalysisResponse(ApiModel):
     fractals: tuple[FractalResponse, ...]
     pens: tuple[PenResponse, ...]
+    segments: tuple[SegmentResponse, ...]
     zhongshu: tuple[ZhongshuResponse, ...]
     merged_count: int
     trend: str
@@ -85,6 +106,44 @@ class MarketSummaryResponse(ApiModel):
     volume: int
 
 
+class RealtimeQuoteResponse(ApiModel):
+    secid: str
+    symbol: str
+    name: str
+    time: datetime
+    open: float
+    high: float
+    low: float
+    previous_close: float
+    latest: float
+    change: float
+    change_percent: float
+    volume: int
+    amount: float
+
+
+class QuotePointResponse(ApiModel):
+    time: datetime
+    price: float
+
+
+class QuoteSeriesResponse(ApiModel):
+    secid: str
+    points: tuple[QuotePointResponse, ...]
+
+
+class QuoteSampleRequest(BaseModel):
+    secid: str
+    time: datetime
+    price: float = Field(gt=0)
+
+
+class MarketGuidanceResponse(ApiModel):
+    bias: str
+    reasons: tuple[str, ...]
+    invalidation_price: float | None
+
+
 class MarketSnapshotResponse(ApiModel):
     instrument: InstrumentResponse
     timeframe: str
@@ -92,3 +151,4 @@ class MarketSnapshotResponse(ApiModel):
     candles: tuple[CandleResponse, ...]
     analysis: ChanAnalysisResponse
     summary: MarketSummaryResponse
+    guidance: MarketGuidanceResponse

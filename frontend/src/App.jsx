@@ -1,15 +1,27 @@
 import { useState } from 'react'
-import { DEFAULT_STOCK, getLatestPen, getLatestZhongshu, getQuoteDirection } from './domain/market.js'
-import { TIMEFRAMES } from './domain/timeframes.js'
+import { getLatestPen, getLatestZhongshu, getQuoteDirection } from './domain/market.js'
+import { VIEW_TABS as TIMEFRAMES } from './domain/timeframes.js'
 import MarketChart from './presentation/components/MarketChart.jsx'
+import RealtimeQuotePanel from './presentation/components/RealtimeQuotePanel.jsx'
 import StockSearch from './presentation/components/StockSearch.jsx'
+import TermInfo from './presentation/components/TermInfo.jsx'
+import { GLOSSARY } from './presentation/glossary.js'
+import { useMarketRoute } from './presentation/hooks/useMarketRoute.js'
 import { useMarketSnapshot } from './presentation/hooks/useMarketSnapshot.js'
+import { useRealtimeQuote } from './presentation/hooks/useRealtimeQuote.js'
 
 const LAYERS = [
   { key: 'fractals', label: '分型' },
   { key: 'pens', label: '笔' },
-  { key: 'zhongshu', label: '中枢' },
+  { key: 'segments', label: '线段' },
+  { key: 'zhongshu', label: '笔中枢' },
 ]
+
+const GUIDANCE_LABELS = {
+  bullish: '偏多观察',
+  bearish: '偏空观察',
+  neutral: '暂时等待',
+}
 
 function formatPrice(value) {
   return Number(value).toFixed(3)
@@ -38,14 +50,23 @@ function RefreshIcon({ spinning }) {
 }
 
 function App({ useCases }) {
-  const [selectedStock, setSelectedStock] = useState(DEFAULT_STOCK)
-  const [timeframe, setTimeframe] = useState('30m')
+  const { selectedStock, setSelectedStock, timeframe, setTimeframe } = useMarketRoute(useCases.searchStocks)
   const [reloadKey, setReloadKey] = useState(0)
-  const [layers, setLayers] = useState({ fractals: true, pens: true, zhongshu: true })
-  const { snapshot, loading, error } = useMarketSnapshot(
+  const [layers, setLayers] = useState({ fractals: true, pens: true, segments: true, zhongshu: true })
+  const isRealtime = timeframe === 'realtime'
+  const { snapshot, loading: snapshotLoading, error: snapshotError } = useMarketSnapshot(
     useCases.getMarketSnapshot,
     selectedStock,
     timeframe,
+    reloadKey,
+    !isRealtime,
+  )
+  const { quote, series, loading: quoteLoading, refreshing, error: quoteError } = useRealtimeQuote(
+    useCases.getQuote,
+    useCases.getQuoteSeries,
+    useCases.recordQuoteSample,
+    selectedStock.secid,
+    isRealtime,
     reloadKey,
   )
 
@@ -57,7 +78,9 @@ function App({ useCases }) {
     setSelectedStock(stock)
   }
 
-  const summary = snapshot?.summary
+  const summary = isRealtime && quote ? quote : snapshot?.summary
+  const loading = isRealtime ? quoteLoading : snapshotLoading
+  const error = isRealtime ? quoteError : snapshotError
   const analysis = snapshot?.analysis
   const lastPen = getLatestPen(analysis)
   const lastZone = getLatestZhongshu(analysis)
@@ -68,7 +91,8 @@ function App({ useCases }) {
       <header className="topbar">
         <a className="brand" href="/" aria-label="缠观首页">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span className="brand-name">缠观<small>CHAN THEORY</small></span>
+          <span className="brand-name">缠观</span>
+          <span className="brand-tagline">先看结构，再看方向。</span>
         </a>
         <div className="topbar-actions">
           <span className="data-status"><i />公开行情</span>
@@ -79,7 +103,7 @@ function App({ useCases }) {
             title="刷新行情"
             onClick={() => setReloadKey((value) => value + 1)}
           >
-            <RefreshIcon spinning={loading} />
+            <RefreshIcon spinning={loading || refreshing} />
           </button>
         </div>
       </header>
@@ -87,10 +111,10 @@ function App({ useCases }) {
       <main>
         <section className="market-header" aria-labelledby="instrument-name">
           <div className="market-identity">
-            <p className="eyebrow">STRUCTURE OVER NOISE</p>
             <div className="instrument-row">
               <h1 id="instrument-name">{selectedStock.name}</h1>
-              <span className="symbol">{selectedStock.symbol} · {selectedStock.market}</span>
+              <span className="symbol">{selectedStock.symbol}</span>
+              <span className="market-label">{selectedStock.market}</span>
             </div>
             <div className="quote-row">
               <strong className={direction}>{summary ? formatPrice(summary.latest) : '—'}</strong>
@@ -101,8 +125,8 @@ function App({ useCases }) {
           </div>
           <div className="session-meta">
             <span>分析周期</span>
-            <strong>{snapshot?.timeframe_label || TIMEFRAMES.find((item) => item.value === timeframe)?.label}</strong>
-            <small>{snapshot ? `${snapshot.candles.length} 根 K 线 · ${snapshot.instrument.currency || ''}` : '正在载入'}</small>
+            <strong>{TIMEFRAMES.find((item) => item.value === timeframe)?.label}</strong>
+            <small>{isRealtime ? '' : loading && snapshot ? '正在更新结构…' : snapshot ? `${snapshot.candles.length} 根 K 线 · ${snapshot.instrument.currency || ''}` : '正在载入'}</small>
           </div>
         </section>
 
@@ -111,7 +135,13 @@ function App({ useCases }) {
           <p>支持 股票 / ETF<span>A 股 · 港股 · 美股</span></p>
         </section>
 
-        <nav className="timeframe-tabs" aria-label="K 线周期" role="tablist">
+        <nav
+          className="timeframe-tabs"
+          aria-label="K 线周期"
+          role="tablist"
+          data-active={TIMEFRAMES.findIndex((item) => item.value === timeframe)}
+        >
+          <span className="timeframe-slider" aria-hidden="true" />
           {TIMEFRAMES.map((item) => (
             <button
               key={item.value}
@@ -133,10 +163,12 @@ function App({ useCases }) {
           </div>
         )}
 
-        <div className="workspace">
+        <div className={`workspace ${isRealtime ? 'realtime-workspace' : ''}`}>
+          {isRealtime ? <RealtimeQuotePanel quote={quote} series={series} loading={quoteLoading} /> : (
+            <>
           <section className="chart-card" aria-label="量价与缠论结构图">
             <div className="card-header">
-              <div><h2>量价结构</h2><p>PRICE · VOLUME · CHAN</p></div>
+              <div><h2>量价结构</h2></div>
               <div className="layer-controls" aria-label="图层控制">
                 {LAYERS.map((layer) => (
                   <button
@@ -156,7 +188,7 @@ function App({ useCases }) {
                 <MarketChart
                   candles={snapshot.candles}
                   analysis={snapshot.analysis}
-                  timeframe={timeframe}
+                  timeframe={snapshot.timeframe}
                   layers={layers}
                 />
               )}
@@ -172,27 +204,50 @@ function App({ useCases }) {
 
           <aside className="insight-panel">
             <div className="panel-heading">
-              <div><p className="eyebrow">STRUCTURE</p><h2>结构解读</h2></div>
+              <div><h2>结构解读</h2></div>
               <span className={`trend-badge ${analysis?.trend || ''}`}>
                 {analysis?.trend === 'up' ? '向上笔' : analysis?.trend === 'down' ? '向下笔' : '等待结构'}
+                <TermInfo {...GLOSSARY.upPen} />
               </span>
             </div>
 
+            {snapshot?.guidance && (
+              <section className={`guidance-card ${snapshot.guidance.bias}`} aria-label="结构观察结论">
+                <div className="guidance-heading">
+                  <span>结构观察结论<TermInfo {...GLOSSARY.guidance} /></span>
+                  <strong>{GUIDANCE_LABELS[snapshot.guidance.bias]}</strong>
+                </div>
+                <ul>
+                  {snapshot.guidance.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                </ul>
+                {Number.isFinite(snapshot.guidance.invalidation_price) && (
+                  <p className="guidance-invalidation">
+                    <span>失效参考价<TermInfo {...GLOSSARY.invalidation} /></span>
+                    <b>{formatPrice(snapshot.guidance.invalidation_price)}</b>
+                  </p>
+                )}
+                <small>仅供结构研究，不构成买卖建议</small>
+              </section>
+            )}
+
             <div className="structure-stats">
-              <div><span>分型</span><strong>{analysis?.fractals.length ?? '—'}</strong><small>已确认</small></div>
-              <div><span>笔</span><strong>{analysis?.pens.length ?? '—'}</strong><small>当前周期</small></div>
-              <div><span>中枢</span><strong>{analysis?.zhongshu.length ?? '—'}</strong><small>已识别</small></div>
+              <div><span>分型<TermInfo {...GLOSSARY.fractal} /></span><strong>{analysis?.fractals.length ?? '—'}</strong><small>入选端点</small></div>
+              <div><span>笔<TermInfo {...GLOSSARY.pen} /></span><strong>{analysis?.pens.length ?? '—'}</strong><small>末笔为候选</small></div>
+              <div><span>笔中枢<TermInfo {...GLOSSARY.zhongshu} /></span><strong>{analysis?.zhongshu.length ?? '—'}</strong><small>核心不收缩</small></div>
             </div>
 
             <div className="structure-detail">
-              <div className="detail-title"><span>最近一笔</span><small>LAST PEN</small></div>
+              <div className="detail-title">
+                <span>最近一笔<TermInfo {...GLOSSARY.pen} /></span>
+                <small>{lastPen ? (lastPen.confirmed ? '已确认' : '候选 · 可能修正') : ''}{lastPen && <TermInfo {...GLOSSARY.confirmed} />}</small>
+              </div>
               {lastPen ? (
                 <>
                   <div className="pen-direction">
                     <span className={lastPen.direction === 'up' ? 'direction-icon up' : 'direction-icon down'}>
                       {lastPen.direction === 'up' ? '↗' : '↘'}
                     </span>
-                    <div><strong>{lastPen.direction === 'up' ? '向上延伸' : '向下延伸'}</strong><small>{formatTime(lastPen.end_time)}</small></div>
+                    <div><strong>{lastPen.direction === 'up' ? '向上笔' : '向下笔'}<TermInfo {...GLOSSARY.upPen} /></strong><small>{formatTime(lastPen.end_time)}</small></div>
                     <b className={lastPen.direction === 'up' ? 'up' : 'down'}>
                       {lastPen.direction === 'up' ? '+' : ''}{((lastPen.end_price / lastPen.start_price - 1) * 100).toFixed(2)}%
                     </b>
@@ -205,14 +260,18 @@ function App({ useCases }) {
             </div>
 
             <div className="structure-detail zone-detail">
-              <div className="detail-title"><span>最近中枢</span><small>ZHONGSHU</small></div>
+              <div className="detail-title">
+                <span>{snapshot?.timeframe_label || ''}笔中枢<TermInfo {...GLOSSARY.timeframeZone} /></span>
+                <small>{lastZone ? (lastZone.confirmed ? '延伸已结束' : '候选 · 仍可延伸') : ''}</small>
+              </div>
               {lastZone ? (
                 <>
                   <div className="zone-range">
-                    <div><span>上沿 ZG</span><strong>{formatPrice(lastZone.high)}</strong></div>
-                    <div><span>下沿 ZD</span><strong>{formatPrice(lastZone.low)}</strong></div>
+                    <div><span>核心上沿 ZG<TermInfo {...GLOSSARY.coreHigh} /></span><strong>{formatPrice(lastZone.high)}</strong></div>
+                    <div><span>核心下沿 ZD<TermInfo {...GLOSSARY.coreLow} /></span><strong>{formatPrice(lastZone.low)}</strong></div>
                   </div>
-                  <p>区间宽度 <b>{formatPrice(lastZone.high - lastZone.low)}</b><span>{formatTime(lastZone.end_time)}</span></p>
+                  <p><span className="zone-metric-label">核心宽度<TermInfo {...GLOSSARY.coreWidth} /></span><b>{formatPrice(lastZone.high - lastZone.low)}</b><span className="zone-time">{formatTime(lastZone.end_time)}</span></p>
+                  <p><span className="zone-metric-label">波动范围<TermInfo {...GLOSSARY.range} /></span><b>{formatPrice(lastZone.dd)}～{formatPrice(lastZone.gg)}</b></p>
                 </>
               ) : <p className="empty-copy">连续三笔尚无价格重叠区间</p>}
             </div>
@@ -223,13 +282,10 @@ function App({ useCases }) {
               <div><span>近 20 根量能</span><strong>{summary ? formatVolume(summary.volume) : '—'}</strong></div>
             </div>
           </aside>
+            </>
+          )}
         </div>
 
-        <footer>
-          <span className="footer-mark">缠</span>
-          <p><strong>先看结构，再看方向。</strong><br />{snapshot?.instrument.data_source || '公开市场行情'}；缠论采用简化算法，仅供技术研究，不构成投资建议。</p>
-          <span className="demo-note">PUBLIC MARKET DATA<br />东方财富搜索 · YAHOO 行情</span>
-        </footer>
       </main>
     </div>
   )

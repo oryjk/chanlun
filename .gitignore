@@ -27,3 +27,4 @@ Thumbs.db
 # Runtime output
 logs/
 *.log
+var/quotes/

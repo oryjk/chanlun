@@ -1,14 +1,26 @@
 from fastapi import APIRouter, Query, Request
 
+from ...application.commands.services import CommandServices
 from ...application.queries.services import QueryServices
 from ...domain.models import TimeFrame
-from .schemas import MarketSnapshotResponse, StockResponse, StockSearchResponse
+from .schemas import (
+    MarketSnapshotResponse,
+    QuoteSampleRequest,
+    QuoteSeriesResponse,
+    RealtimeQuoteResponse,
+    StockResponse,
+    StockSearchResponse,
+)
 
 router = APIRouter()
 
 
 def queries(request: Request) -> QueryServices:
     return request.app.state.queries
+
+
+def commands(request: Request) -> CommandServices:
+    return request.app.state.commands
 
 
 @router.get("/api/health")
@@ -25,6 +37,24 @@ def timeframes() -> dict:
 def search_stocks(request: Request, query: str = Query(alias="q", min_length=1, max_length=40)) -> StockSearchResponse:
     items = queries(request).search_stocks.execute(query)
     return StockSearchResponse(items=[StockResponse.model_validate(item) for item in items])
+
+
+@router.get("/api/quote", response_model=RealtimeQuoteResponse)
+def get_realtime_quote(request: Request, secid: str) -> RealtimeQuoteResponse:
+    quote = queries(request).get_quote.execute(secid)
+    return RealtimeQuoteResponse.model_validate(quote)
+
+
+@router.get("/api/quote/series", response_model=QuoteSeriesResponse)
+def get_quote_series(request: Request, secid: str) -> QuoteSeriesResponse:
+    series = queries(request).get_quote_series.execute(secid)
+    return QuoteSeriesResponse.model_validate(series)
+
+
+@router.post("/api/quote/samples", response_model=QuoteSeriesResponse)
+def record_quote_sample(request: Request, sample: QuoteSampleRequest) -> QuoteSeriesResponse:
+    series = commands(request).record_quote_sample.execute(sample.secid, sample.time, sample.price)
+    return QuoteSeriesResponse.model_validate(series)
 
 
 @router.get("/api/chan", response_model=MarketSnapshotResponse)

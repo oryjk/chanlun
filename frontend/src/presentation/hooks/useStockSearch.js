@@ -7,47 +7,62 @@ export function useStockSearch(searchStocks, initialSymbol) {
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
   const requestRef = useRef(0)
+  const timerRef = useRef(null)
+  const controllerRef = useRef(null)
+
+  const runSearch = async (value) => {
+    clearTimeout(timerRef.current)
+    controllerRef.current?.abort()
+    if (!value) return []
+
+    const controller = new AbortController()
+    controllerRef.current = controller
+    const requestId = ++requestRef.current
+    setSearching(true)
+    setError('')
+
+    try {
+      const results = await searchStocks(value, controller.signal)
+      if (requestId !== requestRef.current) return null
+      setItems(results)
+      return results
+    } catch (reason) {
+      if (reason.name === 'AbortError' || requestId !== requestRef.current) return null
+      setItems([])
+      setError(reason.message)
+      return null
+    } finally {
+      if (!controller.signal.aborted && requestId === requestRef.current) setSearching(false)
+    }
+  }
 
   useEffect(() => {
     const value = query.trim()
+    controllerRef.current?.abort()
+    requestRef.current += 1
     if (!value) {
       setItems([])
       setSearching(false)
       return
     }
 
-    const controller = new AbortController()
-    const requestId = ++requestRef.current
-    const timer = setTimeout(() => {
-      setSearching(true)
-      setError('')
-      searchStocks(value, controller.signal)
-        .then((results) => {
-          if (requestId === requestRef.current) setItems(results)
-        })
-        .catch((reason) => {
-          if (reason.name !== 'AbortError' && requestId === requestRef.current) {
-            setItems([])
-            setError(reason.message)
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted && requestId === requestRef.current) setSearching(false)
-        })
-    }, 280)
-
-    return () => {
-      clearTimeout(timer)
-      controller.abort()
-    }
+    timerRef.current = setTimeout(() => runSearch(value), 280)
+    return () => clearTimeout(timerRef.current)
   }, [query, searchStocks])
 
+  useEffect(() => () => controllerRef.current?.abort(), [])
+
   const reset = (symbol) => {
+    clearTimeout(timerRef.current)
+    controllerRef.current?.abort()
+    requestRef.current += 1
     setQuery(symbol)
     setItems([])
     setOpen(false)
     setError('')
   }
 
-  return { query, items, open, searching, error, setQuery, setOpen, setError, reset }
+  const searchNow = () => runSearch(query.trim())
+
+  return { query, items, open, searching, error, setQuery, setOpen, setError, reset, searchNow }
 }

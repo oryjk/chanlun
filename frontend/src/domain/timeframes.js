@@ -4,3 +4,8 @@ export const TIMEFRAMES = [
   { value: '1h', label: '1 小时', short: '1H' },
   { value: '1d', label: '日线', short: '1D' },
 ]
+
+export const VIEW_TABS = [
+  ...TIMEFRAMES,
+  { value: 'realtime', label: '实时', short: '' },
+]

@@ -12,7 +12,7 @@ function SearchIcon() {
 export default function StockSearch({ selected, onSelect, searchStocks }) {
   const {
     query, items, open, searching, error,
-    setQuery, setOpen, setError, reset,
+    setQuery, setOpen, setError, reset, searchNow,
   } = useStockSearch(searchStocks, selected.symbol)
 
   const selectStock = (stock) => {
@@ -20,19 +20,24 @@ export default function StockSearch({ selected, onSelect, searchStocks }) {
     onSelect(stock)
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
     if (!query.trim()) {
       setError('请输入证券代码或名称')
       setOpen(true)
       return
     }
-    const exact = items.find((item) => item.symbol.toLowerCase() === query.trim().toLowerCase())
-    if (exact || items[0]) {
-      selectStock(exact || items[0])
+
+    const results = await searchNow()
+    if (!results) {
+      setOpen(true)
+      return
+    }
+    if (results[0]) {
+      selectStock(results[0])
     } else {
       setOpen(true)
-      if (!searching && !error) setError('未找到匹配证券，请检查代码或名称')
+      setError('未找到匹配证券，请检查代码或名称')
     }
   }
 

@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from ...domain.models import MarketData, Stock, TimeFrame
+from ...domain.models import MarketData, QuoteSeries, RealtimeQuote, Stock, TimeFrame
 
 
 class StockSearchReader(Protocol):
@@ -9,3 +9,15 @@ class StockSearchReader(Protocol):
 
 class MarketDataReader(Protocol):
     def read(self, secid: str, timeframe: TimeFrame, force_refresh: bool = False) -> MarketData: ...
+
+
+class QuoteReader(Protocol):
+    def read_quote(self, secid: str) -> RealtimeQuote: ...
+
+
+class QuoteSeriesReader(Protocol):
+    def read_series(self, secid: str) -> QuoteSeries: ...
+
+
+class IntradayQuoteReader(Protocol):
+    def read_intraday(self, secid: str) -> QuoteSeries: ...
