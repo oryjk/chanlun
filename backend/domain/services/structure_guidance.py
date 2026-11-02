@@ -9,6 +9,7 @@ class StructureGuidanceEvaluator:
                 bias="neutral",
                 reasons=("已确认笔或笔中枢不足，暂不形成方向判断",),
                 invalidation_price=None,
+                strength=0,
             )
 
         zone = analysis.zhongshu[-1]
@@ -63,4 +64,5 @@ class StructureGuidanceEvaluator:
             bias=bias,
             reasons=tuple(reasons),
             invalidation_price=invalidation_price,
+            strength=abs(score) if bias != "neutral" else 0,
         )

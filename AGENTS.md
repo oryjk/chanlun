@@ -21,21 +21,30 @@ backend/
 ├── domain/
 │   ├── models.py              # 不可变领域模型、周期和值校验
 │   ├── errors.py              # 与 HTTP 状态码无关的领域异常
-│   └── services/              # 缠论分析、结构判断、分时序列合并等纯领域算法
+│   └── services/              # 缠论分析、MACD、背驰与买卖点、多级别联立、结构判断、分时序列合并等纯领域算法
 ├── application/
 │   ├── ports/
-│   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索）
+│   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索、榜单候选池）
 │   │   └── writers.py         # 写入端口（报价采样）
-│   ├── queries/               # 只读用例
+│   ├── queries/               # 只读用例（含复用快照查询的榜单与多级别联立）
 │   └── commands/              # 写用例（记录报价采样）
 ├── infrastructure/
 │   ├── http/                  # 通用传输客户端
-│   ├── market/                # 东方财富 K 线、实时报价、分时、搜索读取适配器
+│   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池读取适配器；新浪备用 K 线与主备切换装饰器
 │   ├── cache/                 # 缓存装饰器，不污染用例
 │   └── persistence/           # 本地 JSON 报价存储，同时实现分时 Reader 与 Writer
 ├── interfaces/api/            # FastAPI 路由、Pydantic DTO、异常映射
 └── app/                       # 组合根与应用启动（含 CORS 配置）
 ```
+
+### 缠论买卖点约定
+
+- 快照在笔、线段、笔中枢之外返回 `macd`（12/26/9，柱 = 2 ×（DIF − DEA））与 `signals`（走势类型、背驰、三类买卖点），由 `domain/services/chan_signals.py` 计算。
+- 走势类型：最近两个笔中枢核心区间不重叠且依次抬高或降低为趋势，否则为盘整。
+- 背驰：离开中枢的同向段创新高或新低，且其同号 MACD 柱面积小于进入段；只有趋势背驰产生一类买卖点，盘整背驰仅作提示。
+- 二类：一类点后首次同向回抽不破一类点价格。三类：中枢后第一笔不再回到核心区间。末笔为候选时买卖点标记为未确认。
+- `/api/chan/confluence` 比对日线、1 小时、30 分钟、5 分钟：次级别最近买卖点与大级别最近买卖点同向且在其后，视为印证。单个级别取数失败时跳过该级别。
+- 买卖点是规则化的结构识别，界面必须保留"不构成买卖建议"的提示。
 
 `backend/app/container.py` 返回 `QueryServices` 与 `CommandServices` 两组服务，路由分别从 `app.state.queries` 和 `app.state.commands` 取用。报价采样按 `var/quotes/{secid}-{YYYYMMDD}.json` 按日存储，写入时清理往日文件；`var/quotes/` 是运行时数据，不入库。
 
@@ -87,4 +96,4 @@ uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 cd frontend && bun run build
 ```
 
-并通过真实 HTTP 请求验证股票与 ETF 搜索、四周期行情、实时报价与采样写入、跨域响应头和错误响应；不得仅以导入成功或构建成功代替端到端验证。
+并通过真实 HTTP 请求验证股票与 ETF 搜索、四周期行情与买卖点、多级别联立、榜单、实时报价与采样写入、跨域响应头和错误响应；不得仅以导入成功或构建成功代替端到端验证。

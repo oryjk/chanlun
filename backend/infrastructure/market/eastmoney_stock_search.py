@@ -15,7 +15,7 @@ class EastmoneyStockSearchReader:
             self.URL,
             {"input": query, "type": 14, "token": self.TOKEN, "count": 12},
         )
-        items = payload.get("QuotationCodeTable", {}).get("Data") or []
+        items = (payload.get("QuotationCodeTable") or {}).get("Data") or []
         results = []
         for item in items:
             if not self._is_supported(item) or not item.get("QuoteID"):

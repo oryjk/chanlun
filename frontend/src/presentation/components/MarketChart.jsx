@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
+import { pointLabel, pointShortLabel } from '../../domain/signals.js'
 
 const UP = '#d94f5e'
 const DOWN = '#15936e'
@@ -24,7 +25,7 @@ function compactVolume(value) {
   return value
 }
 
-function buildOption(candles, analysis, timeframe, layers) {
+function buildOption(candles, analysis, macd, signals, timeframe, layers) {
   const times = candles.map((item) => item.time)
   const confirmedPenPoints = Array(candles.length).fill(null)
   const candidatePenPoints = Array(candles.length).fill(null)
@@ -47,14 +48,20 @@ function buildOption(candles, analysis, timeframe, layers) {
     const candle = candles[candleParam.dataIndex]
     const rising = candle.close >= candle.open
     const color = rising ? UP : DOWN
+    const macdPoint = macd[candleParam.dataIndex]
+    const pointRows = signals.points
+      .filter((point) => point.candle_index === candleParam.dataIndex)
+      .map((point) => `<div class="tooltip-row"><span>${pointLabel(point)}${point.confirmed ? '' : '（候选）'}</span><b style="color:${point.side === 'buy' ? UP : DOWN}">${point.price.toFixed(3)}</b></div>`)
+      .join('')
     const rows = [
       ['开盘', candle.open.toFixed(3)],
       ['最高', candle.high.toFixed(3)],
       ['最低', candle.low.toFixed(3)],
       ['收盘', candle.close.toFixed(3)],
       ['成交量', compactVolume(candle.volume)],
+      ...(macdPoint ? [['MACD', macdPoint.histogram.toFixed(3)]] : []),
     ]
-    return `<div class="chart-tooltip"><div class="tooltip-time">${fullTime(candle.time)}</div>${rows.map(([label, value]) => `<div class="tooltip-row"><span>${label}</span><b style="color:${label === '收盘' ? color : '#2d302d'}">${value}</b></div>`).join('')}</div>`
+    return `<div class="chart-tooltip"><div class="tooltip-time">${fullTime(candle.time)}</div>${rows.map(([label, value]) => `<div class="tooltip-row"><span>${label}</span><b style="color:${label === '收盘' ? color : '#2d302d'}">${value}</b></div>`).join('')}${pointRows}</div>`
   }
 
   return {
@@ -76,8 +83,9 @@ function buildOption(candles, analysis, timeframe, layers) {
       formatter: tooltipFormatter,
     },
     grid: [
-      { left: 16, right: 72, top: 24, height: '58%' },
-      { left: 16, right: 72, top: '72%', height: '16%' },
+      { left: 16, right: 72, top: 24, height: '52%' },
+      { left: 16, right: 72, top: '62%', height: '10%' },
+      { left: 16, right: 72, top: '76%', height: '13%' },
     ],
     xAxis: [
       {
@@ -87,6 +95,11 @@ function buildOption(candles, analysis, timeframe, layers) {
       },
       {
         type: 'category', gridIndex: 1, data: times, boundaryGap: true,
+        axisLine: { lineStyle: { color: '#d8d8d1' } }, axisTick: { show: false }, axisLabel: { show: false },
+        splitLine: { show: false }, min: 'dataMin', max: 'dataMax',
+      },
+      {
+        type: 'category', gridIndex: 2, data: times, boundaryGap: true,
         axisLine: { lineStyle: { color: '#d8d8d1' } }, axisTick: { show: false },
         axisLabel: { color: '#858a82', fontSize: 11, margin: 11, formatter: (value) => axisTime(value, timeframe), hideOverlap: true },
         splitLine: { show: false }, min: 'dataMin', max: 'dataMax',
@@ -104,11 +117,17 @@ function buildOption(candles, analysis, timeframe, layers) {
         axisLabel: { color: '#858a82', fontSize: 11, formatter: compactVolume, margin: 12 },
         splitLine: { show: false },
       },
+      {
+        scale: true, gridIndex: 2, position: 'right', splitNumber: 2,
+        axisLine: { show: false }, axisTick: { show: false },
+        axisLabel: { color: '#858a82', fontSize: 11, formatter: (value) => value.toFixed(2), margin: 12 },
+        splitLine: { lineStyle: { color: '#e1e0da', type: 'dashed' } },
+      },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1], start: 52, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false },
+      { type: 'inside', xAxisIndex: [0, 1, 2], start: 52, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false },
       {
-        type: 'slider', xAxisIndex: [0, 1], start: 52, end: 100, bottom: 5, height: 15,
+        type: 'slider', xAxisIndex: [0, 1, 2], start: 52, end: 100, bottom: 5, height: 15,
         showDetail: false, borderColor: 'transparent', backgroundColor: '#e8e7e2', fillerColor: 'rgba(167,222,207,0.35)',
         handleStyle: { color: '#a7decf', borderColor: '#327d6b' }, moveHandleStyle: { color: '#82bfae' },
         emphasis: { moveHandleStyle: { color: '#327d6b' } }, dataBackground: { lineStyle: { color: '#c5c9c2' }, areaStyle: { color: '#ecebe6' } },
@@ -160,6 +179,33 @@ function buildOption(candles, analysis, timeframe, layers) {
         },
       },
       {
+        name: '买卖点', type: 'scatter', z: 8,
+        data: layers.points ? signals.points.map((point) => ({
+          value: [point.time, point.price],
+          symbolRotate: point.side === 'buy' ? 180 : 0,
+          symbolOffset: [0, point.side === 'buy' ? 15 : -15],
+          label: { formatter: pointShortLabel(point), offset: [0, point.side === 'buy' ? 3 : -3] },
+          itemStyle: { color: point.side === 'buy' ? UP : DOWN, opacity: point.confirmed ? 0.92 : 0.45 },
+        })) : [],
+        symbol: 'pin', symbolSize: 30, silent: true,
+        label: { show: true, color: '#ffffff', fontSize: 10, fontWeight: 700 },
+      },
+      {
+        name: 'MACD', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, barMaxWidth: 6,
+        data: macd.map((point) => ({
+          value: point.histogram,
+          itemStyle: { color: point.histogram >= 0 ? 'rgba(217,79,94,0.6)' : 'rgba(21,147,110,0.6)' },
+        })),
+      },
+      {
+        name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd.map((point) => point.dif),
+        showSymbol: false, silent: true, lineStyle: { color: '#2d302d', width: 1 },
+      },
+      {
+        name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd.map((point) => point.dea),
+        showSymbol: false, silent: true, lineStyle: { color: GOLD, width: 1 },
+      },
+      {
         name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, barMaxWidth: 10,
         data: candles.map((item) => ({
           value: item.volume,
@@ -170,7 +216,7 @@ function buildOption(candles, analysis, timeframe, layers) {
   }
 }
 
-export default function MarketChart({ candles, analysis, timeframe, layers }) {
+export default function MarketChart({ candles, analysis, macd, signals, timeframe, layers }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
 
@@ -188,8 +234,8 @@ export default function MarketChart({ candles, analysis, timeframe, layers }) {
 
   useEffect(() => {
     if (!chartRef.current) return
-    chartRef.current.setOption(buildOption(candles, analysis, timeframe, layers), { notMerge: true })
-  }, [candles, analysis, timeframe, layers])
+    chartRef.current.setOption(buildOption(candles, analysis, macd, signals, timeframe, layers), { notMerge: true })
+  }, [candles, analysis, macd, signals, timeframe, layers])
 
-  return <div className="market-chart" ref={containerRef} role="img" aria-label={`${timeframe} 周期 K 线、成交量与缠论结构图`} />
+  return <div className="market-chart" ref={containerRef} role="img" aria-label={`${timeframe} 周期 K 线、成交量、MACD 与缠论结构图`} />
 }

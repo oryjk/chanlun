@@ -7,6 +7,10 @@ class StockSearchReader(Protocol):
     def search(self, query: str) -> list[Stock]: ...
 
 
+class StockPoolReader(Protocol):
+    def list_liquid(self, limit: int) -> list[Stock]: ...
+
+
 class MarketDataReader(Protocol):
     def read(self, secid: str, timeframe: TimeFrame, force_refresh: bool = False) -> MarketData: ...
 

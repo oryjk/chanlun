@@ -20,6 +20,24 @@ function toMarketSnapshot(dto) {
     },
     summary: { ...dto.summary },
     guidance: { ...dto.guidance },
+    macd: dto.macd.map((point) => ({ ...point })),
+    signals: {
+      trend_type: dto.signals.trend_type,
+      divergences: dto.signals.divergences.map((divergence) => ({ ...divergence })),
+      points: dto.signals.points.map((point) => ({ ...point })),
+    },
+  }
+}
+
+function toSignalConfluence(dto) {
+  return {
+    secid: dto.secid,
+    conclusion: dto.conclusion,
+    levels: dto.levels.map((level) => ({
+      ...level,
+      latest_point: level.latest_point && { ...level.latest_point },
+      lower_confirmation: level.lower_confirmation && { ...level.lower_confirmation },
+    })),
   }
 }
 
@@ -34,12 +52,20 @@ export function createMarketGateway() {
       const response = await getJson(`/api/chan?${params}`, signal)
       return toMarketSnapshot(response)
     },
+    async getSignalConfluence(secid, signal) {
+      const response = await getJson(`/api/chan/confluence?secid=${encodeURIComponent(secid)}`, signal)
+      return toSignalConfluence(response)
+    },
     async getQuote(secid, signal) {
       const response = await getJson(`/api/quote?secid=${encodeURIComponent(secid)}`, signal)
       return { ...response }
     },
     async getQuoteSeries(secid, signal) {
       const response = await getJson(`/api/quote/series?secid=${encodeURIComponent(secid)}`, signal)
+      return { ...response }
+    },
+    async getRankings(limit, signal) {
+      const response = await getJson(`/api/rankings?limit=${limit}`, signal)
       return { ...response }
     },
     async recordQuoteSample(quote, signal) {

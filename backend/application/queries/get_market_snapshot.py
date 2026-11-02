@@ -1,5 +1,7 @@
 from ...domain.models import MarketData, MarketSnapshot, MarketSummary, TimeFrame, validate_security_id
 from ...domain.services.chan_analyzer import ChanAnalyzer
+from ...domain.services.chan_signals import ChanSignalAnalyzer
+from ...domain.services.macd import compute_macd
 from ...domain.services.structure_guidance import StructureGuidanceEvaluator
 from ..ports.readers import MarketDataReader
 
@@ -10,10 +12,12 @@ class GetMarketSnapshotQuery:
         reader: MarketDataReader,
         analyzer: ChanAnalyzer,
         guidance_evaluator: StructureGuidanceEvaluator,
+        signal_analyzer: ChanSignalAnalyzer,
     ):
         self._reader = reader
         self._analyzer = analyzer
         self._guidance_evaluator = guidance_evaluator
+        self._signal_analyzer = signal_analyzer
 
     def execute(self, secid: str, timeframe: str, refresh: bool = False) -> MarketSnapshot:
         normalized_secid = validate_security_id(secid)
@@ -36,6 +40,7 @@ class GetMarketSnapshotQuery:
         )
         analysis = self._analyzer.analyze(candles)
         guidance = self._guidance_evaluator.evaluate(analysis, latest.close)
+        macd = compute_macd(candles)
         return MarketSnapshot(
             instrument=market_data.instrument,
             timeframe=timeframe,
@@ -44,4 +49,6 @@ class GetMarketSnapshotQuery:
             analysis=analysis,
             summary=summary,
             guidance=guidance,
+            macd=macd,
+            signals=self._signal_analyzer.analyze(analysis, macd),
         )

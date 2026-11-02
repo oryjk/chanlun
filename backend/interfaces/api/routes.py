@@ -7,7 +7,9 @@ from .schemas import (
     MarketSnapshotResponse,
     QuoteSampleRequest,
     QuoteSeriesResponse,
+    RankingBoardResponse,
     RealtimeQuoteResponse,
+    SignalConfluenceResponse,
     StockResponse,
     StockSearchResponse,
 )
@@ -26,6 +28,12 @@ def commands(request: Request) -> CommandServices:
 @router.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@router.get("/api/rankings", response_model=RankingBoardResponse)
+def get_rankings(request: Request, limit: int = Query(default=6, ge=1, le=10)) -> RankingBoardResponse:
+    board = queries(request).get_rankings.execute(limit)
+    return RankingBoardResponse.model_validate(board)
 
 
 @router.get("/api/timeframes")
@@ -66,3 +74,9 @@ def get_chan_snapshot(
 ) -> MarketSnapshotResponse:
     snapshot = queries(request).get_market_snapshot.execute(secid, timeframe, refresh)
     return MarketSnapshotResponse.model_validate(snapshot)
+
+
+@router.get("/api/chan/confluence", response_model=SignalConfluenceResponse)
+def get_signal_confluence(request: Request, secid: str) -> SignalConfluenceResponse:
+    confluence = queries(request).get_signal_confluence.execute(secid)
+    return SignalConfluenceResponse.model_validate(confluence)

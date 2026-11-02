@@ -97,6 +97,57 @@ class ChanAnalysisResponse(ApiModel):
     trend: str
 
 
+class MacdPointResponse(ApiModel):
+    dif: float
+    dea: float
+    histogram: float
+
+
+class DivergenceResponse(ApiModel):
+    kind: str
+    direction: str
+    zhongshu_id: int
+    entering_pen_id: int
+    leaving_pen_id: int
+    entering_area: float
+    leaving_area: float
+    candle_index: int
+    time: datetime
+    price: float
+    confirmed: bool
+
+
+class BuySellPointResponse(ApiModel):
+    kind: int
+    side: str
+    pen_id: int
+    candle_index: int
+    time: datetime
+    price: float
+    confirmed: bool
+    reason: str
+
+
+class ChanSignalsResponse(ApiModel):
+    trend_type: str
+    divergences: tuple[DivergenceResponse, ...]
+    points: tuple[BuySellPointResponse, ...]
+
+
+class LevelSignalResponse(ApiModel):
+    timeframe: str
+    timeframe_label: str
+    trend_type: str
+    latest_point: BuySellPointResponse | None
+    lower_confirmation: BuySellPointResponse | None
+
+
+class SignalConfluenceResponse(ApiModel):
+    secid: str
+    levels: tuple[LevelSignalResponse, ...]
+    conclusion: str
+
+
 class MarketSummaryResponse(ApiModel):
     latest: float
     change: float
@@ -142,6 +193,7 @@ class MarketGuidanceResponse(ApiModel):
     bias: str
     reasons: tuple[str, ...]
     invalidation_price: float | None
+    strength: int
 
 
 class MarketSnapshotResponse(ApiModel):
@@ -152,3 +204,23 @@ class MarketSnapshotResponse(ApiModel):
     analysis: ChanAnalysisResponse
     summary: MarketSummaryResponse
     guidance: MarketGuidanceResponse
+    macd: tuple[MacdPointResponse, ...]
+    signals: ChanSignalsResponse
+
+
+class RankingEntryResponse(ApiModel):
+    rank: int
+    stock: StockResponse
+    bias: str
+    strength: int
+    latest: float
+    change_percent: float
+    invalidation_price: float | None
+    latest_point: BuySellPointResponse | None
+
+
+class RankingBoardResponse(ApiModel):
+    generated_at: datetime
+    timeframe: str
+    bullish: tuple[RankingEntryResponse, ...]
+    bearish: tuple[RankingEntryResponse, ...]

@@ -11,6 +11,12 @@ from ...domain.errors import MarketDataNotFound, MarketDataUnavailable
 
 class JsonHttpClient:
     def get(self, url: str, params: dict[str, Any]) -> dict:
+        try:
+            return json.loads(self.get_text(url, params))
+        except json.JSONDecodeError as error:
+            raise MarketDataUnavailable("行情服务暂时不可用，请稍后重试") from error
+
+    def get_text(self, url: str, params: dict[str, Any]) -> str:
         request = Request(
             f"{url}?{urlencode(params)}",
             headers={
@@ -20,10 +26,11 @@ class JsonHttpClient:
         )
         try:
             with urlopen(request, timeout=15) as response:
-                return json.load(response)
+                encoding = response.headers.get_content_charset() or "utf-8"
+                return response.read().decode(encoding)
         except HTTPError as error:
             if error.code == 404:
                 raise MarketDataNotFound("未找到该证券的行情数据") from error
             raise MarketDataUnavailable("行情服务暂时不可用，请稍后重试") from error
-        except (URLError, RemoteDisconnected, ConnectionError, socket.timeout, TimeoutError, json.JSONDecodeError) as error:
+        except (URLError, RemoteDisconnected, ConnectionError, socket.timeout, TimeoutError) as error:
             raise MarketDataUnavailable("行情服务暂时不可用，请稍后重试") from error

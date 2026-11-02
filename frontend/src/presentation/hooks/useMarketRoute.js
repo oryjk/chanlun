@@ -12,15 +12,17 @@ export function readMarketRoute(search) {
   const timeframe = VIEW_TABS.some((item) => item.value === requestedTimeframe)
     ? requestedTimeframe
     : DEFAULT_TIMEFRAME
+  const view = params.get('view') === 'rankings' ? 'rankings' : 'market'
 
   if (!SECID_PATTERN.test(secid)) {
-    return { stock: DEFAULT_STOCK, timeframe, resolveStock: false }
+    return { stock: DEFAULT_STOCK, timeframe, view, resolveStock: false }
   }
 
   const symbol = secid.split('.')[1]
   return {
     stock: { secid, symbol, name: symbol, market: '' },
     timeframe,
+    view,
     resolveStock: true,
   }
 }
@@ -29,13 +31,15 @@ export function useMarketRoute(searchStocks) {
   const [initialRoute] = useState(() => readMarketRoute(window.location.search))
   const [selectedStock, setSelectedStock] = useState(initialRoute.stock)
   const [timeframe, setTimeframe] = useState(initialRoute.timeframe)
+  const [view, setView] = useState(initialRoute.view)
 
   useEffect(() => {
     const url = new URL(window.location.href)
     url.searchParams.set('secid', selectedStock.secid)
     url.searchParams.set('timeframe', timeframe)
+    url.searchParams.set('view', view)
     window.history.replaceState(window.history.state, '', url)
-  }, [selectedStock.secid, timeframe])
+  }, [selectedStock.secid, timeframe, view])
 
   useEffect(() => {
     if (!initialRoute.resolveStock) return
@@ -53,5 +57,5 @@ export function useMarketRoute(searchStocks) {
     return () => controller.abort()
   }, [initialRoute, searchStocks])
 
-  return { selectedStock, setSelectedStock, timeframe, setTimeframe }
+  return { selectedStock, setSelectedStock, timeframe, setTimeframe, view, setView }
 }

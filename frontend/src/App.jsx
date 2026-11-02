@@ -2,19 +2,23 @@ import { useState } from 'react'
 import { getLatestPen, getLatestZhongshu, getQuoteDirection } from './domain/market.js'
 import { VIEW_TABS as TIMEFRAMES } from './domain/timeframes.js'
 import MarketChart from './presentation/components/MarketChart.jsx'
+import RankingPage from './presentation/components/RankingPage.jsx'
 import RealtimeQuotePanel from './presentation/components/RealtimeQuotePanel.jsx'
+import SignalPanel from './presentation/components/SignalPanel.jsx'
 import StockSearch from './presentation/components/StockSearch.jsx'
 import TermInfo from './presentation/components/TermInfo.jsx'
 import { GLOSSARY } from './presentation/glossary.js'
 import { useMarketRoute } from './presentation/hooks/useMarketRoute.js'
 import { useMarketSnapshot } from './presentation/hooks/useMarketSnapshot.js'
 import { useRealtimeQuote } from './presentation/hooks/useRealtimeQuote.js'
+import { useSignalConfluence } from './presentation/hooks/useSignalConfluence.js'
 
 const LAYERS = [
   { key: 'fractals', label: '分型' },
   { key: 'pens', label: '笔' },
   { key: 'segments', label: '线段' },
   { key: 'zhongshu', label: '笔中枢' },
+  { key: 'points', label: '买卖点' },
 ]
 
 const GUIDANCE_LABELS = {
@@ -50,27 +54,37 @@ function RefreshIcon({ spinning }) {
 }
 
 function App({ useCases }) {
-  const { selectedStock, setSelectedStock, timeframe, setTimeframe } = useMarketRoute(useCases.searchStocks)
+  const { selectedStock, setSelectedStock, timeframe, setTimeframe, view, setView } = useMarketRoute(useCases.searchStocks)
   const [reloadKey, setReloadKey] = useState(0)
-  const [layers, setLayers] = useState({ fractals: true, pens: true, segments: true, zhongshu: true })
+  const [layers, setLayers] = useState({ fractals: true, pens: true, segments: true, zhongshu: true, points: true })
   const isRealtime = timeframe === 'realtime'
   const { snapshot, loading: snapshotLoading, error: snapshotError } = useMarketSnapshot(
     useCases.getMarketSnapshot,
     selectedStock,
     timeframe,
     reloadKey,
-    !isRealtime,
+    view === 'market' && !isRealtime,
   )
   const { quote, series, loading: quoteLoading, refreshing, error: quoteError } = useRealtimeQuote(
     useCases.getQuote,
     useCases.getQuoteSeries,
     useCases.recordQuoteSample,
     selectedStock.secid,
-    isRealtime,
+    view === 'market' && isRealtime,
+    reloadKey,
+  )
+  const { confluence, loading: confluenceLoading, error: confluenceError } = useSignalConfluence(
+    useCases.getSignalConfluence,
+    selectedStock.secid,
+    view === 'market' && !isRealtime,
     reloadKey,
   )
 
   const selectStock = (stock) => {
+    if (view === 'rankings') {
+      setView('market')
+      setTimeframe('1d')
+    }
     if (stock.secid === selectedStock.secid) {
       setReloadKey((value) => value + 1)
       return
@@ -94,6 +108,10 @@ function App({ useCases }) {
           <span className="brand-name">缠观</span>
           <span className="brand-tagline">先看结构，再看方向。</span>
         </a>
+        <nav className="view-nav" aria-label="页面切换">
+          <button type="button" className={view === 'market' ? 'active' : ''} onClick={() => setView('market')}>行情</button>
+          <button type="button" className={view === 'rankings' ? 'active' : ''} onClick={() => setView('rankings')}>榜单</button>
+        </nav>
         <div className="topbar-actions">
           <span className="data-status"><i />公开行情</span>
           <button
@@ -109,6 +127,10 @@ function App({ useCases }) {
       </header>
 
       <main>
+        {view === 'rankings' ? (
+          <RankingPage getRankings={useCases.getRankings} onSelectStock={selectStock} reloadKey={reloadKey} />
+        ) : (
+          <>
         <section className="market-header" aria-labelledby="instrument-name">
           <div className="market-identity">
             <div className="instrument-row">
@@ -126,7 +148,7 @@ function App({ useCases }) {
           <div className="session-meta">
             <span>分析周期</span>
             <strong>{TIMEFRAMES.find((item) => item.value === timeframe)?.label}</strong>
-            <small>{isRealtime ? '' : loading && snapshot ? '正在更新结构…' : snapshot ? `${snapshot.candles.length} 根 K 线 · ${snapshot.instrument.currency || ''}` : '正在载入'}</small>
+            <small>{isRealtime ? '' : loading && snapshot ? '正在更新结构…' : snapshot ? `${snapshot.candles.length} 根 K 线 · ${snapshot.instrument.data_source}` : '正在载入'}</small>
           </div>
         </section>
 
@@ -188,6 +210,8 @@ function App({ useCases }) {
                 <MarketChart
                   candles={snapshot.candles}
                   analysis={snapshot.analysis}
+                  macd={snapshot.macd}
+                  signals={snapshot.signals}
                   timeframe={snapshot.timeframe}
                   layers={layers}
                 />
@@ -228,6 +252,16 @@ function App({ useCases }) {
                 )}
                 <small>仅供结构研究，不构成买卖建议</small>
               </section>
+            )}
+
+            {snapshot && (
+              <SignalPanel
+                signals={snapshot.signals}
+                timeframeLabel={snapshot.timeframe_label}
+                confluence={confluence}
+                confluenceLoading={confluenceLoading}
+                confluenceError={confluenceError}
+              />
             )}
 
             <div className="structure-stats">
@@ -285,7 +319,8 @@ function App({ useCases }) {
             </>
           )}
         </div>
-
+          </>
+        )}
       </main>
     </div>
   )

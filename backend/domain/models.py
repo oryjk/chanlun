@@ -182,6 +182,64 @@ class MarketGuidance:
     bias: str
     reasons: tuple[str, ...]
     invalidation_price: float | None
+    strength: int
+
+
+@dataclass(frozen=True)
+class MacdPoint:
+    dif: float
+    dea: float
+    histogram: float
+
+
+@dataclass(frozen=True)
+class Divergence:
+    kind: str
+    direction: str
+    zhongshu_id: int
+    entering_pen_id: int
+    leaving_pen_id: int
+    entering_area: float
+    leaving_area: float
+    candle_index: int
+    time: datetime
+    price: float
+    confirmed: bool
+
+
+@dataclass(frozen=True)
+class BuySellPoint:
+    kind: int
+    side: str
+    pen_id: int
+    candle_index: int
+    time: datetime
+    price: float
+    confirmed: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class ChanSignals:
+    trend_type: str
+    divergences: tuple[Divergence, ...]
+    points: tuple[BuySellPoint, ...]
+
+
+@dataclass(frozen=True)
+class LevelSignal:
+    timeframe: TimeFrame
+    timeframe_label: str
+    trend_type: str
+    latest_point: BuySellPoint | None
+    lower_confirmation: BuySellPoint | None
+
+
+@dataclass(frozen=True)
+class SignalConfluence:
+    secid: str
+    levels: tuple[LevelSignal, ...]
+    conclusion: str
 
 
 @dataclass(frozen=True)
@@ -193,3 +251,25 @@ class MarketSnapshot:
     analysis: ChanAnalysis
     summary: MarketSummary
     guidance: MarketGuidance
+    macd: tuple[MacdPoint, ...]
+    signals: ChanSignals
+
+
+@dataclass(frozen=True)
+class RankingEntry:
+    rank: int
+    stock: Stock
+    bias: str
+    strength: int
+    latest: float
+    change_percent: float
+    invalidation_price: float | None
+    latest_point: BuySellPoint | None = None
+
+
+@dataclass(frozen=True)
+class RankingBoard:
+    generated_at: datetime
+    timeframe: TimeFrame
+    bullish: tuple[RankingEntry, ...]
+    bearish: tuple[RankingEntry, ...]
