@@ -1,6 +1,9 @@
+// 部署在子路径（如 /chanlun/）时，API 同样位于该路径下
+const API_ROOT = import.meta.env.BASE_URL.replace(/\/$/, '')
+
 async function requestJson(path, { method = 'GET', body: requestBody, signal } = {}) {
   try {
-    const response = await fetch(path, {
+    const response = await fetch(`${API_ROOT}${path}`, {
       method,
       signal,
       headers: requestBody ? { 'Content-Type': 'application/json' } : undefined,

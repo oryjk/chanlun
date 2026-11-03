@@ -24,18 +24,28 @@ backend/
 │   └── services/              # 缠论分析、MACD、背驰与买卖点、多级别联立、结构判断、分时序列合并等纯领域算法
 ├── application/
 │   ├── ports/
-│   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索、榜单候选池）
-│   │   └── writers.py         # 写入端口（报价采样）
-│   ├── queries/               # 只读用例（含复用快照查询的榜单与多级别联立）
-│   └── commands/              # 写用例（记录报价采样）
+│   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索、榜单候选池、小程序外链）
+│   │   ├── writers.py         # 写入端口（报价采样）
+│   │   └── auth.py            # 身份兑换网关与会话编解码端口
+│   ├── queries/               # 只读用例（含复用快照查询的榜单与多级别联立、当前用户、小程序外链）
+│   └── commands/              # 写用例（记录报价采样、一次性 code 登录）
 ├── infrastructure/
 │   ├── http/                  # 通用传输客户端
 │   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池读取适配器；新浪备用 K 线与主备切换装饰器
 │   ├── cache/                 # 缓存装饰器，不污染用例
-│   └── persistence/           # 本地 JSON 报价存储，同时实现分时 Reader 与 Writer
-├── interfaces/api/            # FastAPI 路由、Pydantic DTO、异常映射
-└── app/                       # 组合根与应用启动（含 CORS 配置）
+│   ├── persistence/           # 本地 JSON 报价存储，同时实现分时 Reader 与 Writer
+│   └── auth/                  # 报名系统网关（code 兑换身份、URL Link）与 HMAC 签名会话
+├── interfaces/api/            # FastAPI 路由（行情 routes.py、登录 auth_routes.py）、Pydantic DTO、异常映射
+└── app/                       # 组合根、环境配置 settings.py 与应用启动
 ```
+
+### 登录与鉴权约定
+
+- 缠观不自建账号，身份来自报名系统（`../registration_system`）小程序：小程序 `pages/chanlun/index` 落地页默认登录后，以 web-view 打开缠观并带上一次性 `webview_code`（60 秒、单次有效）。
+- 前端 `main.jsx` 渲染前取出并抹掉地址栏中的 `webview_code` 等桥接参数，交给 `POST /api/auth/webview-login`；后端用 code 调报名系统 `/auth/webview-codes/exchange` 换 JWT、再读 `/users/me`，然后签发缠观自己的 HttpOnly cookie `chanlun_session`（HMAC 签名、无状态、默认 30 天）。报名系统 JWT 不下发到前端。
+- 不登录也能使用全部行情功能。收藏、跟踪等个人功能必须通过 `useAuth().requireLogin(action)` 调用：已登录直接执行，游客弹出登录引导。
+- 登录引导按环境区分：小程序 web-view 内通过 `wx.miniProgram.redirectTo` 回到落地页登录并自动返回原页面；微信内浏览器或普通浏览器调 `GET /api/auth/mini-program-link` 获取报名系统生成的 URL Link。回跳参数只保留 `secid`、`timeframe`、`view`，且只允许 `[A-Za-z0-9._=&-]`，与小程序和报名系统规则一致。
+- URL Link 只能指向已发布小程序版本中存在的页面，新版小程序发布前该接口返回 502。
 
 ### 缠论买卖点约定
 
@@ -53,7 +63,7 @@ backend/
 - Query 只能读取，不得产生数据库写入、修改配置或其他业务副作用。
 - 新增写入功能时建立 `application/commands` 和 `application/ports/writers.py`，由 Command 调用 Writer。
 - Reader 与 Writer 分开定义，不创建一个同时承担所有读写的巨型 Repository。
-- 当前唯一的业务写入是实时报价采样（`POST /api/quote/samples` → `RecordQuoteSampleCommand` → `QuoteWriter`）；不得为了形式完整创建空写库或无意义 Command。
+- 当前唯一的业务写入是实时报价采样（`POST /api/quote/samples` → `RecordQuoteSampleCommand` → `QuoteWriter`）；登录（`LoginWithWebviewCodeCommand`）会消费一次性 code 并签发会话，因此按 Command 处理。不得为了形式完整创建空写库或无意义 Command。
 - 缓存是读取适配器的装饰器；强制刷新只能绕过读取缓存，不得被当作业务写入。
 - 新增数据源时实现对应端口，在 `backend/app/container.py` 注册；领域算法和 API 路由不应跟随修改。
 
@@ -62,15 +72,17 @@ backend/
 ```text
 frontend/src/
 ├── domain/                    # 纯领域定义、选择器、交易时段和分时序列合并等业务规则
-├── application/               # 股票搜索、快照与报价读取等查询用例，报价采样写入用例
-├── infrastructure/api/        # fetch、HTTP 错误、DTO 转换和 Gateway
+├── application/               # 股票搜索、快照与报价读取等查询用例，报价采样写入用例，会话查询、code 登录与登录引导用例
+├── infrastructure/
+│   ├── api/                   # fetch、HTTP 错误、DTO 转换和 Gateway（行情、登录）
+│   └── wechat/                # 微信 JS-SDK 桥接（web-view 内跳回小程序）
 ├── presentation/
-│   ├── components/            # 渲染和用户交互
+│   ├── components/            # 渲染和用户交互（含 AuthContext 登录状态、账号标识与登录引导弹窗）
 │   ├── hooks/                 # 请求生命周期、加载状态、防抖、URL 路由同步、实时轮询等交互状态
 │   └── glossary.js            # 术语说明文案
 ├── app/container.js           # 前端唯一依赖装配位置
 ├── App.jsx                    # 展示层页面编排
-└── main.jsx                   # 用例注入与 React 启动
+└── main.jsx                   # 取出 web-view 桥接参数、识别运行环境、用例注入与 React 启动
 ```
 
 ### 前端读写分离
@@ -84,7 +96,9 @@ frontend/src/
 ## 四、运行配置
 
 - CORS 来源由环境变量 `CHANLUN_CORS_ORIGINS` 控制，多个来源用逗号分隔；未设置时为 `*`，允许任意客户端访问。不得在代码中写死主机或 IP。
-- 开发时前端通过 Vite 代理 `/api` 到 `127.0.0.1:8000`，同源访问不依赖 CORS。
+- 开发时前端通过 Vite 代理 `/api` 到 `127.0.0.1:8000`，同源访问不依赖 CORS；会话 cookie 依赖同源部署。
+- 生产部署在报名系统已配置的 web-view 业务域名下：`https://match.oryjk.cn/chanlun/`。前端以 `CHANLUN_BASE_PATH=/chanlun/ bun run build` 构建，API 请求自动带上该前缀，由 nginx 把 `/chanlun/api/` 转发到缠观后端。
+- 登录相关环境变量：`CHANLUN_REGISTRATION_API_BASE`（报名系统 App API 根路径，默认 `http://127.0.0.1:18081/api/v1/app`）、`CHANLUN_SESSION_SECRET`（至少 32 字符；未配置时使用临时密钥，重启后登录态失效）、`CHANLUN_SESSION_MAX_AGE`（秒，默认 30 天）、`CHANLUN_SESSION_COOKIE_SECURE`（HTTPS 部署设为 `true`）。
 
 ## 五、变更检查
 
@@ -96,7 +110,7 @@ uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 cd frontend && bun test src && bun run build
 ```
 
-并通过真实 HTTP 请求验证股票与 ETF 搜索、四周期行情与买卖点、多级别联立、榜单、实时报价与采样写入、跨域响应头和错误响应；不得仅以导入成功或构建成功代替端到端验证。
+并通过真实 HTTP 请求验证股票与 ETF 搜索、四周期行情与买卖点、多级别联立、榜单、实时报价与采样写入、一次性 code 登录与游客会话、跨域响应头和错误响应；不得仅以导入成功或构建成功代替端到端验证。
 
 ## 六、分支与提交
 

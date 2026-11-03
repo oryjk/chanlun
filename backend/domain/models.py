@@ -273,3 +273,10 @@ class RankingBoard:
     timeframe: TimeFrame
     bullish: tuple[RankingEntry, ...]
     bearish: tuple[RankingEntry, ...]
+
+
+@dataclass(frozen=True)
+class UserIdentity:
+    user_id: int
+    nickname: str
+    avatar_url: str | None = None

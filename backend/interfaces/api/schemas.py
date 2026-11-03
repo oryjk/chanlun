@@ -224,3 +224,22 @@ class RankingBoardResponse(ApiModel):
     timeframe: str
     bullish: tuple[RankingEntryResponse, ...]
     bearish: tuple[RankingEntryResponse, ...]
+
+
+class UserIdentityResponse(ApiModel):
+    user_id: int
+    nickname: str
+    avatar_url: str | None
+
+
+class SessionResponse(ApiModel):
+    authenticated: bool
+    user: UserIdentityResponse | None
+
+
+class WebviewLoginRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=256)
+
+
+class MiniProgramLinkResponse(ApiModel):
+    url: str

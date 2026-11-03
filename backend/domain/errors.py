@@ -20,3 +20,11 @@ class MarketDataUnavailable(ChanlunError):
 
 class MarketDataNotFound(ChanlunError):
     pass
+
+
+class AuthenticationFailed(ChanlunError):
+    pass
+
+
+class IdentityServiceUnavailable(ChanlunError):
+    pass

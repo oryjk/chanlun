@@ -25,3 +25,7 @@ class QuoteSeriesReader(Protocol):
 
 class IntradayQuoteReader(Protocol):
     def read_intraday(self, secid: str) -> QuoteSeries: ...
+
+
+class MiniProgramLinkReader(Protocol):
+    def chanlun_link(self, return_query: str) -> str: ...

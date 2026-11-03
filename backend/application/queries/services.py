@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
+from .get_current_user import GetCurrentUserQuery
 from .get_market_snapshot import GetMarketSnapshotQuery
+from .get_mini_program_link import GetMiniProgramLinkQuery
 from .get_quote import GetQuoteQuery
 from .get_quote_series import GetQuoteSeriesQuery
 from .get_rankings import GetRankingsQuery
@@ -16,3 +18,5 @@ class QueryServices:
     get_quote_series: GetQuoteSeriesQuery
     get_rankings: GetRankingsQuery
     get_signal_confluence: GetSignalConfluenceQuery
+    get_current_user: GetCurrentUserQuery
+    get_mini_program_link: GetMiniProgramLinkQuery

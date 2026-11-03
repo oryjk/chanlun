@@ -2,8 +2,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from ...domain.errors import (
+    AuthenticationFailed,
     ChanlunError,
     EmptySearchQuery,
+    IdentityServiceUnavailable,
     InvalidSecurityId,
     InvalidTimeframe,
     MarketDataNotFound,
@@ -19,6 +21,8 @@ def register_error_handlers(app: FastAPI) -> None:
             status_code = 400
         elif isinstance(error, MarketDataNotFound):
             status_code = 404
-        elif isinstance(error, MarketDataUnavailable):
+        elif isinstance(error, AuthenticationFailed):
+            status_code = 401
+        elif isinstance(error, (MarketDataUnavailable, IdentityServiceUnavailable)):
             status_code = 502
         return JSONResponse(status_code=status_code, content={"detail": str(error)})

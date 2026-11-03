@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { getLatestPen, getLatestZhongshu, getQuoteDirection } from './domain/market.js'
 import { VIEW_TABS as TIMEFRAMES } from './domain/timeframes.js'
+import AccountChip from './presentation/components/AccountChip.jsx'
 import MarketChart from './presentation/components/MarketChart.jsx'
 import RankingPage from './presentation/components/RankingPage.jsx'
 import RealtimeQuotePanel from './presentation/components/RealtimeQuotePanel.jsx'
@@ -114,6 +115,7 @@ function App({ useCases }) {
         </nav>
         <div className="topbar-actions">
           <span className="data-status"><i />公开行情</span>
+          <AccountChip />
           <button
             className="icon-button"
             type="button"
