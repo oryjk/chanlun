@@ -1,9 +1,7 @@
 import { isMarketOpen } from '../../domain/marketHours.js'
+import { formatPrice } from '../../domain/market.js'
+import DragonLoader from './DragonLoader.jsx'
 import RealtimeChart from './RealtimeChart.jsx'
-
-function formatPrice(value) {
-  return Number(value).toFixed(3)
-}
 
 function formatVolume(value) {
   if (value >= 100000000) return `${(value / 100000000).toFixed(2)} 亿股`
@@ -23,7 +21,7 @@ function formatQuoteTime(value) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
-export default function RealtimeQuotePanel({ quote, series, loading }) {
+export default function RealtimeQuotePanel({ quote, series, loading, decimals }) {
   const direction = quote?.change >= 0 ? 'up' : 'down'
 
   return (
@@ -39,31 +37,31 @@ export default function RealtimeQuotePanel({ quote, series, loading }) {
       {quote ? (
         <>
           <div className="realtime-price">
-            <strong className={direction}>{formatPrice(quote.latest)}</strong>
+            <strong className={direction}>{formatPrice(quote.latest, decimals)}</strong>
             <span className={direction}>
-              {quote.change >= 0 ? '+' : ''}{formatPrice(quote.change)}
+              {quote.change >= 0 ? '+' : ''}{formatPrice(quote.change, decimals)}
               <b>{quote.change >= 0 ? '+' : ''}{quote.change_percent}%</b>
             </span>
           </div>
           <div className="realtime-chart">
             {series.points.length > 0 ? (
-              <RealtimeChart points={series.points} secid={series.secid || quote.secid} previousClose={quote.previous_close} />
+              <RealtimeChart points={series.points} secid={series.secid || quote.secid} previousClose={quote.previous_close} decimals={decimals} />
             ) : (
               <div className="realtime-chart-empty">正在积累实时走势数据…</div>
             )}
           </div>
           <div className="realtime-metrics">
-            <div><span>今开</span><strong>{formatPrice(quote.open)}</strong></div>
-            <div><span>最高</span><strong>{formatPrice(quote.high)}</strong></div>
-            <div><span>最低</span><strong>{formatPrice(quote.low)}</strong></div>
-            <div><span>昨收</span><strong>{formatPrice(quote.previous_close)}</strong></div>
+            <div><span>今开</span><strong>{formatPrice(quote.open, decimals)}</strong></div>
+            <div><span>最高</span><strong>{formatPrice(quote.high, decimals)}</strong></div>
+            <div><span>最低</span><strong>{formatPrice(quote.low, decimals)}</strong></div>
+            <div><span>昨收</span><strong>{formatPrice(quote.previous_close, decimals)}</strong></div>
             <div><span>成交量</span><strong>{formatVolume(quote.volume)}</strong></div>
             <div><span>成交额</span><strong>{formatAmount(quote.amount)}</strong></div>
           </div>
         </>
       ) : (
         <div className="realtime-loading">
-          {loading ? <><span className="loader" />正在获取实时报价…</> : '暂无实时报价'}
+          {loading ? <DragonLoader title="游龙探盘中" label="正在获取实时报价…" /> : '暂无实时报价'}
         </div>
       )}
     </section>

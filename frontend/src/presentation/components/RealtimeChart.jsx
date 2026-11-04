@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
 import { getSessionBreaks, getTradingDuration, toTradingMinute, tradingMinuteToClock } from '../../domain/marketHours.js'
+import { formatPrice } from '../../domain/market.js'
 
 function formatTime(value, includeSeconds = false) {
   const date = new Date(value)
@@ -9,8 +10,8 @@ function formatTime(value, includeSeconds = false) {
   return includeSeconds ? `${time}:${pad(date.getSeconds())}` : time
 }
 
-function buildOption(points, secid, previousClose) {
-  const latest = points.at(-1)
+function buildOption(points, secid, previousClose, decimals) {
+  const latest = points[points.length - 1]
   // 横轴为去掉休市后的交易分钟，午休前后两段首尾相接
   const toX = (point) => toTradingMinute(secid, point.time)
   const prices = points.map((point) => point.price)
@@ -30,12 +31,12 @@ function buildOption(points, secid, previousClose) {
     tooltip: {
       trigger: 'axis',
       confine: true,
-      backgroundColor: 'rgba(246,245,241,.98)',
-      borderColor: '#d8d8d1',
-      textStyle: { color: '#2d302d', fontSize: 12 },
+      backgroundColor: 'rgba(255,255,255,.98)',
+      borderColor: '#e3e6ea',
+      textStyle: { color: '#1a1d21', fontSize: 12 },
       formatter: (params) => {
         const point = params[0]
-        return point ? `${formatTime(point.value[2], true)}<br/><b>${Number(point.value[1]).toFixed(3)}</b>` : ''
+        return point ? `${formatTime(point.value[2], true)}<br/><b>${formatPrice(point.value[1], decimals)}</b>` : ''
       },
     },
     xAxis: {
@@ -43,9 +44,9 @@ function buildOption(points, secid, previousClose) {
       min: 0,
       max: getTradingDuration(secid),
       interval: 30,
-      axisLine: { lineStyle: { color: '#d8d8d1' } },
+      axisLine: { lineStyle: { color: '#e3e6ea' } },
       axisTick: { show: false },
-      axisLabel: { color: '#858a82', fontSize: 11, formatter: (value) => tradingMinuteToClock(secid, value), hideOverlap: true, alignMinLabel: 'left', alignMaxLabel: 'right' },
+      axisLabel: { color: '#8b919a', fontSize: 11, formatter: (value) => tradingMinuteToClock(secid, value), hideOverlap: true, alignMinLabel: 'left', alignMaxLabel: 'right' },
       splitLine: { show: false },
     },
     yAxis: [
@@ -56,8 +57,8 @@ function buildOption(points, secid, previousClose) {
         position: 'left',
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { color: '#737b71', fontSize: 11, inside: true, margin: 8, formatter: (value) => value.toFixed(3) },
-        splitLine: { lineStyle: { color: '#e1e0da', type: 'dashed' } },
+        axisLabel: { color: '#8b919a', fontSize: 11, inside: true, margin: 8, formatter: (value) => formatPrice(value, decimals) },
+        splitLine: { lineStyle: { color: '#eef0f2', type: 'dashed' } },
       },
       {
         type: 'value',
@@ -66,7 +67,7 @@ function buildOption(points, secid, previousClose) {
         position: 'right',
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { color: '#737b71', fontSize: 11, inside: true, margin: 8, formatter: percentLabel },
+        axisLabel: { color: '#8b919a', fontSize: 11, inside: true, margin: 8, formatter: percentLabel },
         splitLine: { show: false },
       },
     ],
@@ -77,14 +78,14 @@ function buildOption(points, secid, previousClose) {
         data: points.map((point) => [toX(point), point.price, point.time]),
         showSymbol: false,
         smooth: 0.12,
-        lineStyle: { color: '#327d6b', width: 2.2 },
-        itemStyle: { color: '#327d6b' },
-        areaStyle: { color: 'rgba(50,125,107,.12)' },
+        lineStyle: { color: '#2e4a6e', width: 2.2 },
+        itemStyle: { color: '#2e4a6e' },
+        areaStyle: { color: 'rgba(46,74,110,.1)' },
         markPoint: {
           symbol: 'circle',
           symbolSize: 8,
           label: { show: false },
-          itemStyle: { color: '#327d6b', borderColor: '#d8f0e5', borderWidth: 3 },
+          itemStyle: { color: '#2e4a6e', borderColor: '#e6ebf2', borderWidth: 3 },
           data: latest ? [{ coord: [toX(latest), latest.price] }] : [],
         },
         markLine: {
@@ -96,8 +97,8 @@ function buildOption(points, secid, previousClose) {
             { yAxis: previousClose },
             ...getSessionBreaks(secid).map((position) => ({
               xAxis: position,
-              lineStyle: { color: '#9aa49b', type: 'solid', width: 1 },
-              label: { show: true, position: 'insideEndTop', formatter: '休市', color: '#858a82', fontSize: 10 },
+              lineStyle: { color: '#9aa1aa', type: 'solid', width: 1 },
+              label: { show: true, position: 'insideEndTop', formatter: '休市', color: '#8b919a', fontSize: 10 },
             })),
           ],
         },
@@ -106,7 +107,7 @@ function buildOption(points, secid, previousClose) {
   }
 }
 
-export default function RealtimeChart({ points, secid, previousClose }) {
+export default function RealtimeChart({ points, secid, previousClose, decimals }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
 
@@ -123,8 +124,8 @@ export default function RealtimeChart({ points, secid, previousClose }) {
   }, [])
 
   useEffect(() => {
-    chartRef.current?.setOption(buildOption(points, secid, previousClose), { notMerge: true })
-  }, [points, secid, previousClose])
+    chartRef.current?.setOption(buildOption(points, secid, previousClose, decimals), { notMerge: true })
+  }, [points, secid, previousClose, decimals])
 
   return <div className="realtime-line-chart" ref={containerRef} role="img" aria-label="当日实时价格走势图" />
 }

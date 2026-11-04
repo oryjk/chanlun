@@ -14,6 +14,10 @@ class Settings:
     session_secret: str
     session_max_age: int
     session_cookie_secure: bool
+    ranking_store_path: str = "var/rankings/rankings.sqlite3"
+    ranking_run_at: str = "15:30"
+    ranking_workers: int = 4
+    ranking_enabled: bool = True
 
 
 def _cors_allow_origins() -> list[str]:
@@ -32,10 +36,22 @@ def _session_secret() -> str:
 
 
 def load_settings() -> Settings:
+    from datetime import time
+    run_at = os.getenv("CHANLUN_RANKING_RUN_AT", "15:30")
+    parsed_time = time.fromisoformat(run_at)
+    if parsed_time.tzinfo is not None or parsed_time < time(15, 0):
+        raise ValueError("CHANLUN_RANKING_RUN_AT 必须是收盘后的北京时间（15:00 或之后）")
+    workers = int(os.getenv("CHANLUN_RANKING_WORKERS", "4"))
+    if not 1 <= workers <= 16:
+        raise ValueError("CHANLUN_RANKING_WORKERS 必须在 1 到 16 之间")
     return Settings(
         cors_allow_origins=_cors_allow_origins(),
         registration_api_base=os.getenv("CHANLUN_REGISTRATION_API_BASE", DEFAULT_REGISTRATION_API_BASE),
         session_secret=_session_secret(),
         session_max_age=int(os.getenv("CHANLUN_SESSION_MAX_AGE", DEFAULT_SESSION_MAX_AGE)),
         session_cookie_secure=os.getenv("CHANLUN_SESSION_COOKIE_SECURE", "false").lower() == "true",
+        ranking_store_path=os.getenv("CHANLUN_RANKING_STORE_PATH", "var/rankings/rankings.sqlite3"),
+        ranking_run_at=run_at,
+        ranking_workers=workers,
+        ranking_enabled=os.getenv("CHANLUN_RANKING_ENABLED", "true").lower() == "true",
     )

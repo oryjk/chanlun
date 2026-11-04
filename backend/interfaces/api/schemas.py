@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -216,14 +216,25 @@ class RankingEntryResponse(ApiModel):
     latest: float
     change_percent: float
     invalidation_price: float | None
-    latest_point: BuySellPointResponse | None
+    latest_point: BuySellPointResponse | None = None
+    buy_point: BuySellPointResponse | None = None
+    sell_point: BuySellPointResponse | None = None
+    trend: tuple[QuotePointResponse, ...] = ()
 
 
 class RankingBoardResponse(ApiModel):
-    generated_at: datetime
+    generated_at: datetime | None
     timeframe: str
     bullish: tuple[RankingEntryResponse, ...]
     bearish: tuple[RankingEntryResponse, ...]
+    trade_date: date | None = None
+    total_count: int = 0
+    analyzed_count: int = 0
+    failed_count: int = 0
+    state: str = "pending"
+    progress_total: int = 0
+    progress_processed: int = 0
+    update_error: str | None = None
 
 
 class UserIdentityResponse(ApiModel):

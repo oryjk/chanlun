@@ -1,6 +1,8 @@
 import {
   divergenceLabel,
+  formatSignalDate,
   getLatestDivergence,
+  getPriceChangeFromPoint,
   getRecentPoints,
   pointLabel,
   pointShortLabel,
@@ -8,16 +10,7 @@ import {
 } from '../../domain/signals.js'
 import { GLOSSARY } from '../glossary.js'
 import TermInfo from './TermInfo.jsx'
-
-function formatPrice(value) {
-  return Number(value).toFixed(3)
-}
-
-function formatTime(value) {
-  const date = new Date(value)
-  const pad = (number) => String(number).padStart(2, '0')
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
+import { formatPrice } from '../../domain/market.js'
 
 function PointBadge({ point }) {
   return <span className={`point-badge ${point.side} ${point.confirmed ? '' : 'candidate'}`}>{pointShortLabel(point)}</span>
@@ -41,7 +34,7 @@ function ConfluenceSection({ confluence, loading, error }) {
                 <small>{TREND_TYPE_LABELS[level.trend_type]}</small>
                 {level.latest_point ? <PointBadge point={level.latest_point} /> : <em>—</em>}
                 <i className={level.lower_confirmation ? 'confirmed' : ''} title={level.lower_confirmation ? '次级别同向印证' : '次级别未印证'}>
-                  {level.lower_confirmation ? '✓' : '·'}
+                  {level.lower_confirmation ? '✓' : '–'}
                 </i>
               </div>
             ))}
@@ -52,7 +45,16 @@ function ConfluenceSection({ confluence, loading, error }) {
   )
 }
 
-export default function SignalPanel({ signals, timeframeLabel, confluence, confluenceLoading, confluenceError }) {
+export default function SignalPanel({
+  signals,
+  timeframe = '1d',
+  timeframeLabel,
+  latestPrice,
+  confluence,
+  confluenceLoading,
+  confluenceError,
+  decimals,
+}) {
   const points = getRecentPoints(signals)
   const divergence = getLatestDivergence(signals)
 
@@ -65,16 +67,28 @@ export default function SignalPanel({ signals, timeframeLabel, confluence, confl
 
       {points.length > 0 ? (
         <ul className="signal-list">
-          {points.map((point) => (
-            <li key={`${point.kind}-${point.side}-${point.pen_id}`}>
-              <PointBadge point={point} />
-              <div>
-                <strong>{pointLabel(point)}<b>{formatPrice(point.price)}</b></strong>
-                <small>{formatTime(point.time)} · {point.confirmed ? '已确认' : '候选 · 可能修正'}</small>
-                <p>{point.reason}</p>
-              </div>
-            </li>
-          ))}
+          {points.map((point) => {
+            const change = getPriceChangeFromPoint(point, latestPrice)
+            return (
+              <li key={`${point.kind}-${point.side}-${point.pen_id}`}>
+                <PointBadge point={point} />
+                <div>
+                  <strong>{pointLabel(point)}<b>{formatPrice(point.price, decimals)}</b></strong>
+                  <small>
+                    <span>{formatSignalDate(point.time, timeframe)}</span>
+                    {change && (
+                      <span>
+                        较 {change.date}{' '}
+                        <b className={change.percent >= 0 ? 'up' : 'down'}>{change.formatted}</b>
+                      </span>
+                    )}
+                    <span>{point.confirmed ? '已确认' : '候选，可能修正'}</span>
+                  </small>
+                  <p>{point.reason}</p>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       ) : <p className="empty-copy">当前周期尚未出现买卖点</p>}
 

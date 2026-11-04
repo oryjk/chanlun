@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
 from .errors import InvalidSecurityId, InvalidTimeframe
@@ -265,14 +265,25 @@ class RankingEntry:
     change_percent: float
     invalidation_price: float | None
     latest_point: BuySellPoint | None = None
+    buy_point: BuySellPoint | None = None
+    sell_point: BuySellPoint | None = None
+    trend: tuple[QuotePoint, ...] = ()
 
 
 @dataclass(frozen=True)
 class RankingBoard:
-    generated_at: datetime
+    generated_at: datetime | None
     timeframe: TimeFrame
     bullish: tuple[RankingEntry, ...]
     bearish: tuple[RankingEntry, ...]
+    trade_date: date | None = None
+    total_count: int = 0
+    analyzed_count: int = 0
+    failed_count: int = 0
+    state: str = "ready"
+    progress_total: int = 0
+    progress_processed: int = 0
+    update_error: str | None = None
 
 
 @dataclass(frozen=True)

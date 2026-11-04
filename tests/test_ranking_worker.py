@@ -1,0 +1,33 @@
+import unittest
+from datetime import date, datetime, timezone
+from types import SimpleNamespace
+
+from backend.app.ranking_worker import RankingWorker
+from backend.domain.rankings import RankingProgress, RankingView
+
+
+class WorkerTests(unittest.TestCase):
+    def test_before_and_after_cutoff_use_only_closed_trading_dates(self):
+        cutoffs, runs = [], []
+        def day(cutoff):
+            cutoffs.append(cutoff)
+            return cutoff
+        worker = RankingWorker(SimpleNamespace(latest_on_or_before=day),
+                               SimpleNamespace(execute=lambda target, **kwargs: runs.append(target)),
+                               SimpleNamespace(read=lambda: RankingView(None, RankingProgress())), "15:30")
+        worker.tick(datetime(2026, 11, 3, 7, 29, tzinfo=timezone.utc))
+        worker.tick(datetime(2026, 11, 3, 7, 30, tzinfo=timezone.utc))
+        self.assertEqual(cutoffs, [date(2026, 11, 2), date(2026, 11, 3)])
+        self.assertEqual(runs, cutoffs)
+
+    def test_holiday_uses_last_actual_session_instead_of_weekday_guess(self):
+        runs = []
+        worker = RankingWorker(SimpleNamespace(latest_on_or_before=lambda cutoff: date(2026, 9, 30)),
+                               SimpleNamespace(execute=lambda target, **kwargs: runs.append(target)),
+                               SimpleNamespace(read=lambda: RankingView(None, RankingProgress())), "15:30")
+        worker.tick(datetime(2026, 10, 1, 8, tzinfo=timezone.utc))
+        self.assertEqual(runs, [date(2026, 9, 30)])
+
+
+if __name__ == "__main__":
+    unittest.main()

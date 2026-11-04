@@ -31,7 +31,7 @@ def health() -> dict:
 
 
 @router.get("/api/rankings", response_model=RankingBoardResponse)
-def get_rankings(request: Request, limit: int = Query(default=6, ge=1, le=10)) -> RankingBoardResponse:
+def get_rankings(request: Request, limit: int = Query(default=500, ge=1, le=5000)) -> RankingBoardResponse:
     board = queries(request).get_rankings.execute(limit)
     return RankingBoardResponse.model_validate(board)
 

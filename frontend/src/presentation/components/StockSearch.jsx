@@ -1,3 +1,4 @@
+import { isStarMarket } from '../../domain/market.js'
 import { useStockSearch } from '../hooks/useStockSearch.js'
 
 function SearchIcon() {
@@ -58,7 +59,7 @@ export default function StockSearch({ selected, onSelect, searchStocks }) {
             setError('')
           }}
           onFocus={() => setOpen(true)}
-          placeholder="证券代码 / 名称 / 拼音"
+          placeholder="输入代码、名称或拼音"
           aria-label="搜索证券"
           aria-autocomplete="list"
           aria-expanded={open}
@@ -82,7 +83,10 @@ export default function StockSearch({ selected, onSelect, searchStocks }) {
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => selectStock(item)}
             >
-              <span className="result-symbol">{item.symbol}</span>
+              <span className="result-symbol">
+                {item.symbol}
+                {isStarMarket(item) && <i className="board-tag">科创</i>}
+              </span>
               <span className="result-name">{item.name}</span>
               <small>{item.market}</small>
             </button>

@@ -13,7 +13,7 @@ export default function AccountChip() {
   return (
     <button type="button" className="account-chip" onClick={() => openLoginPrompt()}>
       <i aria-hidden="true">客</i>
-      <span>游客 · 登录</span>
+      <span>登录</span>
     </button>
   )
 }

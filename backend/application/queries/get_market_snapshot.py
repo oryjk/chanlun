@@ -1,3 +1,7 @@
+from dataclasses import replace
+from datetime import date
+
+from ...domain.errors import MarketDataNotFound
 from ...domain.models import MarketData, MarketSnapshot, MarketSummary, TimeFrame, validate_security_id
 from ...domain.services.chan_analyzer import ChanAnalyzer
 from ...domain.services.chan_signals import ChanSignalAnalyzer
@@ -19,10 +23,15 @@ class GetMarketSnapshotQuery:
         self._guidance_evaluator = guidance_evaluator
         self._signal_analyzer = signal_analyzer
 
-    def execute(self, secid: str, timeframe: str, refresh: bool = False) -> MarketSnapshot:
+    def execute(self, secid: str, timeframe: str, refresh: bool = False, *, through_date: date | None = None) -> MarketSnapshot:
         normalized_secid = validate_security_id(secid)
         period = TimeFrame.parse(timeframe)
         market_data = self._reader.read(normalized_secid, period, force_refresh=refresh)
+        if through_date is not None:
+            candles = tuple(candle for candle in market_data.candles if candle.time.date() <= through_date)
+            if len(candles) < 2 or candles[-1].time.date() != through_date:
+                raise MarketDataNotFound("该证券的有效收盘行情不足，无法进行分析")
+            market_data = replace(market_data, candles=candles)
         return self._build_snapshot(market_data, period)
 
     def _build_snapshot(self, market_data: MarketData, timeframe: TimeFrame) -> MarketSnapshot:

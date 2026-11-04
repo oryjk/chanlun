@@ -6,6 +6,7 @@ from ...application.ports.readers import StockSearchReader
 from ...domain.errors import ChanlunError, MarketDataNotFound, MarketDataUnavailable
 from ...domain.models import Candle, Instrument, MarketData, TimeFrame
 from ..http.json_client import JsonHttpClient
+from .sina_adjustment import SinaForwardAdjustment
 
 
 class SinaMarketDataReader:
@@ -18,9 +19,12 @@ class SinaMarketDataReader:
         TimeFrame.ONE_DAY: 240,
     }
 
-    def __init__(self, http_client: JsonHttpClient, stock_search: StockSearchReader | None = None):
+    def __init__(self, http_client: JsonHttpClient, stock_search: StockSearchReader | None = None,
+                 adjustment: SinaForwardAdjustment | None = None):
         self._http = http_client
         self._stock_search = stock_search
+        # 提供复权因子时输出前复权价格，与东方财富主数据源（fqt=1）口径一致；未提供时为不复权价格。
+        self._adjustment = adjustment
 
     def read(self, secid: str, timeframe: TimeFrame, force_refresh: bool = False) -> MarketData:
         symbol = self._sina_symbol(secid)
@@ -39,6 +43,8 @@ class SinaMarketDataReader:
             raise MarketDataUnavailable("行情服务返回格式异常") from error
         if len(candles) < 2:
             raise MarketDataNotFound("该证券的有效行情不足，无法进行分析")
+        if self._adjustment is not None:
+            candles = self._forward_adjust(candles, self._adjustment.factor_lookup(symbol))
         code = secid.split(".", 1)[1]
         name, is_etf = self._describe(secid, code)
         instrument = Instrument(
@@ -48,8 +54,7 @@ class SinaMarketDataReader:
             decimal=3 if is_etf else 2,
             currency="CNY",
             exchange=symbol[:2].upper(),
-            # 新浪 K 线为不复权价格，与东方财富前复权数据在除权日附近不可直接比较
-            data_source="新浪财经 · 不复权（备用）",
+            data_source="新浪财经 · 前复权（备用）" if self._adjustment else "新浪财经 · 不复权（备用）",
         )
         return MarketData(instrument=instrument, candles=candles)
 
@@ -71,7 +76,7 @@ class SinaMarketDataReader:
             return f"sh{code}"
         if market == "0":
             return f"{'bj' if code.startswith(('4', '8', '9')) else 'sz'}{code}"
-        raise MarketDataNotFound("备用行情源暂不支持该市场")
+        raise MarketDataNotFound("暂未获取到该市场的行情数据")
 
     def _to_candle(self, item: dict) -> Candle:
         time_value = item["day"]
@@ -84,3 +89,18 @@ class SinaMarketDataReader:
             low=round(float(item["low"]), 4),
             volume=round(float(item["volume"])),
         )
+
+    @staticmethod
+    def _forward_adjust(candles, factor):
+        adjusted = []
+        for candle in candles:
+            f = factor(candle.time.date())
+            adjusted.append(Candle(
+                time=candle.time,
+                open=round(candle.open / f, 4),
+                close=round(candle.close / f, 4),
+                high=round(candle.high / f, 4),
+                low=round(candle.low / f, 4),
+                volume=candle.volume,
+            ))
+        return tuple(adjusted)

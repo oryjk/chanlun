@@ -1,6 +1,7 @@
 from ..application.commands.login_with_webview_code import LoginWithWebviewCodeCommand
 from ..application.commands.record_quote_sample import RecordQuoteSampleCommand
 from ..application.commands.services import CommandServices
+from ..application.commands.build_daily_rankings import BuildDailyRankingsCommand
 from ..application.queries.get_current_user import GetCurrentUserQuery
 from ..application.queries.get_market_snapshot import GetMarketSnapshotQuery
 from ..application.queries.get_mini_program_link import GetMiniProgramLinkQuery
@@ -22,9 +23,14 @@ from ..infrastructure.market.eastmoney_market_data import EastmoneyMarketDataRea
 from ..infrastructure.market.eastmoney_quote import EastmoneyQuoteReader
 from ..infrastructure.market.eastmoney_stock_pool import EastmoneyStockPoolReader
 from ..infrastructure.market.eastmoney_stock_search import EastmoneyStockSearchReader
-from ..infrastructure.market.fallback_market_data import FallbackMarketDataReader
+from ..infrastructure.market.fallback_market_data import FallbackMarketDataReader, FallbackStockUniverseReader
+from ..infrastructure.market.sina_adjustment import SinaForwardAdjustment
 from ..infrastructure.market.sina_market_data import SinaMarketDataReader
+from ..infrastructure.market.sina_stock_pool import SinaStockPoolReader
 from ..infrastructure.persistence.json_quote_store import JsonQuoteStore
+from ..infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
+from ..infrastructure.market.closed_trading_day import IndexClosedTradingDayReader
+from .ranking_worker import RankingWorker
 from .settings import Settings
 
 
@@ -34,7 +40,7 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
     market_data = CachedMarketDataReader(
         FallbackMarketDataReader(
             EastmoneyMarketDataReader(http_client),
-            SinaMarketDataReader(http_client, stock_search),
+            SinaMarketDataReader(http_client, stock_search, SinaForwardAdjustment(http_client)),
         )
     )
     quote_store = JsonQuoteStore("var/quotes")
@@ -46,12 +52,14 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
         StructureGuidanceEvaluator(),
         ChanSignalAnalyzer(),
     )
+    ranking_store = SqliteRankingStore(settings.ranking_store_path)
+    stock_universe = FallbackStockUniverseReader(EastmoneyStockPoolReader(http_client), SinaStockPoolReader(http_client))
     queries = QueryServices(
         search_stocks=SearchStocksQuery(stock_search),
         get_market_snapshot=snapshot_query,
         get_quote=GetQuoteQuery(EastmoneyQuoteReader(http_client)),
         get_quote_series=GetQuoteSeriesQuery(quote_store, EastmoneyIntradayReader(http_client)),
-        get_rankings=GetRankingsQuery(EastmoneyStockPoolReader(http_client), snapshot_query),
+        get_rankings=GetRankingsQuery(ranking_store),
         get_signal_confluence=GetSignalConfluenceQuery(snapshot_query),
         get_current_user=GetCurrentUserQuery(session_codec),
         get_mini_program_link=GetMiniProgramLinkQuery(registration),
@@ -59,5 +67,14 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
     commands = CommandServices(
         record_quote_sample=RecordQuoteSampleCommand(quote_store),
         login_with_webview_code=LoginWithWebviewCodeCommand(registration, session_codec),
+        build_daily_rankings=BuildDailyRankingsCommand(stock_universe, snapshot_query,
+                                                      ranking_store, ranking_store, workers=settings.ranking_workers),
     )
     return queries, commands
+
+
+def build_ranking_worker(settings, commands):
+    store = SqliteRankingStore(settings.ranking_store_path)
+    data = CachedMarketDataReader(FallbackMarketDataReader(EastmoneyMarketDataReader(JsonHttpClient()),
+                                                         SinaMarketDataReader(JsonHttpClient())))
+    return RankingWorker(IndexClosedTradingDayReader(data), commands.build_daily_rankings, store, settings.ranking_run_at)

@@ -1,6 +1,8 @@
-from typing import Protocol
+from datetime import date
+from typing import Callable, Protocol
 
 from ...domain.models import MarketData, QuoteSeries, RealtimeQuote, Stock, TimeFrame
+from ...domain.rankings import RankingItem, RankingView
 
 
 class StockSearchReader(Protocol):
@@ -9,6 +11,19 @@ class StockSearchReader(Protocol):
 
 class StockPoolReader(Protocol):
     def list_liquid(self, limit: int) -> list[Stock]: ...
+
+
+class StockUniverseReader(Protocol):
+    def list_all(self, *, cancelled: Callable[[], bool] = lambda: False) -> tuple[Stock, ...]: ...
+
+
+class RankingReader(Protocol):
+    def read(self) -> RankingView: ...
+    def read_items(self, trade_date: date) -> tuple[RankingItem, ...]: ...
+
+
+class ClosedTradingDayReader(Protocol):
+    def latest_on_or_before(self, cutoff: date) -> date: ...
 
 
 class MarketDataReader(Protocol):

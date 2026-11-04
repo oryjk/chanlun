@@ -6,7 +6,7 @@ export function mergeQuoteSeries(...seriesList) {
     }
   }
   return {
-    secid: seriesList.at(-1).secid,
+    secid: seriesList[seriesList.length - 1].secid,
     points: [...points.entries()]
       .sort(([first], [second]) => first - second)
       .map(([, point]) => point),

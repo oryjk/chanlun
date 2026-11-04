@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
 import { pointLabel, pointShortLabel } from '../../domain/signals.js'
+import { formatPrice } from '../../domain/market.js'
 
 const UP = '#d94f5e'
 const DOWN = '#15936e'
@@ -25,7 +26,7 @@ function compactVolume(value) {
   return value
 }
 
-function buildOption(candles, analysis, macd, signals, timeframe, layers) {
+function buildOption(candles, analysis, macd, signals, timeframe, layers, decimals) {
   const times = candles.map((item) => item.time)
   const confirmedPenPoints = Array(candles.length).fill(null)
   const candidatePenPoints = Array(candles.length).fill(null)
@@ -51,17 +52,17 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers) {
     const macdPoint = macd[candleParam.dataIndex]
     const pointRows = signals.points
       .filter((point) => point.candle_index === candleParam.dataIndex)
-      .map((point) => `<div class="tooltip-row"><span>${pointLabel(point)}${point.confirmed ? '' : '（候选）'}</span><b style="color:${point.side === 'buy' ? UP : DOWN}">${point.price.toFixed(3)}</b></div>`)
+      .map((point) => `<div class="tooltip-row"><span>${pointLabel(point)}${point.confirmed ? '' : '（候选）'}</span><b style="color:${point.side === 'buy' ? UP : DOWN}">${formatPrice(point.price, decimals)}</b></div>`)
       .join('')
     const rows = [
-      ['开盘', candle.open.toFixed(3)],
-      ['最高', candle.high.toFixed(3)],
-      ['最低', candle.low.toFixed(3)],
-      ['收盘', candle.close.toFixed(3)],
+      ['开盘', formatPrice(candle.open, decimals)],
+      ['最高', formatPrice(candle.high, decimals)],
+      ['最低', formatPrice(candle.low, decimals)],
+      ['收盘', formatPrice(candle.close, decimals)],
       ['成交量', compactVolume(candle.volume)],
       ...(macdPoint ? [['MACD', macdPoint.histogram.toFixed(3)]] : []),
     ]
-    return `<div class="chart-tooltip"><div class="tooltip-time">${fullTime(candle.time)}</div>${rows.map(([label, value]) => `<div class="tooltip-row"><span>${label}</span><b style="color:${label === '收盘' ? color : '#2d302d'}">${value}</b></div>`).join('')}${pointRows}</div>`
+    return `<div class="chart-tooltip"><div class="tooltip-time">${fullTime(candle.time)}</div>${rows.map(([label, value]) => `<div class="tooltip-row"><span>${label}</span><b style="color:${label === '收盘' ? color : '#1a1d21'}">${value}</b></div>`).join('')}${pointRows}</div>`
   }
 
   return {
@@ -69,17 +70,17 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers) {
     backgroundColor: 'transparent',
     axisPointer: {
       link: [{ xAxisIndex: 'all' }],
-      label: { backgroundColor: '#327d6b', color: '#ffffff', fontSize: 11 },
+      label: { backgroundColor: '#2e4a6e', color: '#ffffff', fontSize: 11 },
     },
     tooltip: {
       trigger: 'axis',
       confine: true,
-      backgroundColor: 'rgba(246, 245, 241, 0.98)',
-      borderColor: '#d8d8d1',
+      backgroundColor: 'rgba(255, 255, 255, 0.98)',
+      borderColor: '#e3e6ea',
       borderWidth: 1,
       padding: [12, 14],
-      textStyle: { color: '#2d302d', fontSize: 12 },
-      axisPointer: { type: 'cross', lineStyle: { color: '#9aa49b', type: 'dashed' }, crossStyle: { color: '#9aa49b' } },
+      textStyle: { color: '#1a1d21', fontSize: 12 },
+      axisPointer: { type: 'cross', lineStyle: { color: '#9aa1aa', type: 'dashed' }, crossStyle: { color: '#9aa1aa' } },
       formatter: tooltipFormatter,
     },
     grid: [
@@ -90,48 +91,48 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers) {
     xAxis: [
       {
         type: 'category', data: times, boundaryGap: true,
-        axisLine: { lineStyle: { color: '#d8d8d1' } }, axisTick: { show: false }, axisLabel: { show: false },
+        axisLine: { lineStyle: { color: '#e3e6ea' } }, axisTick: { show: false }, axisLabel: { show: false },
         splitLine: { show: false }, min: 'dataMin', max: 'dataMax',
       },
       {
         type: 'category', gridIndex: 1, data: times, boundaryGap: true,
-        axisLine: { lineStyle: { color: '#d8d8d1' } }, axisTick: { show: false }, axisLabel: { show: false },
+        axisLine: { lineStyle: { color: '#e3e6ea' } }, axisTick: { show: false }, axisLabel: { show: false },
         splitLine: { show: false }, min: 'dataMin', max: 'dataMax',
       },
       {
         type: 'category', gridIndex: 2, data: times, boundaryGap: true,
-        axisLine: { lineStyle: { color: '#d8d8d1' } }, axisTick: { show: false },
-        axisLabel: { color: '#858a82', fontSize: 11, margin: 11, formatter: (value) => axisTime(value, timeframe), hideOverlap: true },
+        axisLine: { lineStyle: { color: '#e3e6ea' } }, axisTick: { show: false },
+        axisLabel: { color: '#8b919a', fontSize: 11, margin: 11, formatter: (value) => axisTime(value, timeframe), hideOverlap: true },
         splitLine: { show: false }, min: 'dataMin', max: 'dataMax',
       },
     ],
     yAxis: [
       {
         scale: true, position: 'right', axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: '#737b71', fontSize: 11, formatter: (value) => value.toFixed(3), margin: 12 },
-        splitLine: { lineStyle: { color: '#e1e0da', type: 'dashed' } },
+        axisLabel: { color: '#8b919a', fontSize: 11, formatter: (value) => formatPrice(value, decimals), margin: 12 },
+        splitLine: { lineStyle: { color: '#eef0f2', type: 'dashed' } },
       },
       {
         scale: true, gridIndex: 1, position: 'right', splitNumber: 2,
         axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: '#858a82', fontSize: 11, formatter: compactVolume, margin: 12 },
+        axisLabel: { color: '#8b919a', fontSize: 11, formatter: compactVolume, margin: 12 },
         splitLine: { show: false },
       },
       {
         scale: true, gridIndex: 2, position: 'right', splitNumber: 2,
         axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: '#858a82', fontSize: 11, formatter: (value) => value.toFixed(2), margin: 12 },
-        splitLine: { lineStyle: { color: '#e1e0da', type: 'dashed' } },
+        axisLabel: { color: '#8b919a', fontSize: 11, formatter: (value) => value.toFixed(2), margin: 12 },
+        splitLine: { lineStyle: { color: '#eef0f2', type: 'dashed' } },
       },
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1, 2], start: 52, end: 100, zoomOnMouseWheel: true, moveOnMouseMove: true, moveOnMouseWheel: false },
       {
         type: 'slider', xAxisIndex: [0, 1, 2], start: 52, end: 100, bottom: 5, height: 15,
-        showDetail: false, borderColor: 'transparent', backgroundColor: '#e8e7e2', fillerColor: 'rgba(167,222,207,0.35)',
-        handleStyle: { color: '#a7decf', borderColor: '#327d6b' }, moveHandleStyle: { color: '#82bfae' },
-        emphasis: { moveHandleStyle: { color: '#327d6b' } }, dataBackground: { lineStyle: { color: '#c5c9c2' }, areaStyle: { color: '#ecebe6' } },
-        selectedDataBackground: { lineStyle: { color: '#327d6b' }, areaStyle: { color: '#d8e9e1' } },
+        showDetail: false, borderColor: 'transparent', backgroundColor: '#f4f5f7', fillerColor: 'rgba(46,74,110,0.1)',
+        handleStyle: { color: '#ffffff', borderColor: '#2e4a6e' }, moveHandleStyle: { color: '#9aabc2' },
+        emphasis: { moveHandleStyle: { color: '#2e4a6e' } }, dataBackground: { lineStyle: { color: '#d2d6dc' }, areaStyle: { color: '#eef0f2' } },
+        selectedDataBackground: { lineStyle: { color: '#2e4a6e' }, areaStyle: { color: '#e6ebf2' } },
       },
     ],
     series: [
@@ -153,29 +154,42 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers) {
       {
         name: '已确认线段', type: 'line', data: layers.segments ? confirmedSegmentPoints : [], connectNulls: true,
         showSymbol: false, silent: true, z: 4,
-        lineStyle: { color: '#327d6b', width: 2.4 },
+        lineStyle: { color: '#2e4a6e', width: 2.4 },
       },
       {
         name: '候选线段', type: 'line', data: layers.segments ? candidateSegmentPoints : [], connectNulls: true,
         showSymbol: false, silent: true, z: 4,
-        lineStyle: { color: '#62a792', width: 2, type: 'dashed' },
+        lineStyle: { color: '#7189aa', width: 2, type: 'dashed' },
       },
       {
         name: '分型', type: 'scatter', data: layers.fractals ? analysis.fractals.map((item) => [item.time, item.price, item.type]) : [],
         symbol: 'triangle', symbolSize: 8, symbolRotate: (value) => value[2] === 'bottom' ? 180 : 0,
-        itemStyle: { color: (params) => params.value[2] === 'top' ? '#b48a42' : '#7294aa', borderColor: '#f5f4f0', borderWidth: 1 },
+        itemStyle: { color: (params) => params.value[2] === 'top' ? '#b48a42' : '#7294aa', borderColor: '#ffffff', borderWidth: 1 },
         silent: true, z: 6,
       },
       {
         name: '笔中枢', type: 'line', data: [], silent: true, z: 3,
         markArea: {
           silent: true,
-          itemStyle: { color: 'rgba(114, 138, 175, 0.12)', borderColor: 'rgba(114, 138, 175, 0.45)', borderWidth: 1 },
-          label: { show: true, color: '#657b9c', fontSize: 11, position: 'insideTopLeft', padding: 5 },
+          itemStyle: { color: 'rgba(125, 104, 168, 0.1)', borderColor: 'rgba(125, 104, 168, 0.55)', borderWidth: 1 },
+          label: { show: false },
           data: layers.zhongshu ? analysis.zhongshu.map((zone) => [
-            { name: `笔中枢 ${zone.id}${zone.confirmed ? '' : ' · 候选'}`, xAxis: zone.start_time, yAxis: zone.low },
+            { xAxis: zone.start_time, yAxis: zone.low },
             { xAxis: zone.end_time, yAxis: zone.high },
           ]) : [],
+        },
+      },
+      {
+        // 中枢标签单独成层，避免被 K 线和笔遮挡
+        name: '笔中枢标签', type: 'scatter', silent: true, z: 9, symbolSize: 1, itemStyle: { color: 'transparent' },
+        data: layers.zhongshu ? analysis.zhongshu.map((zone) => ({
+          value: [zone.end_time, zone.high],
+          label: { formatter: `中枢${zone.id}${zone.confirmed ? '' : ' 候选'}` },
+        })) : [],
+        label: {
+          show: true, position: 'top', align: 'right', distance: 3, color: '#5f4d86', fontSize: 10, fontWeight: 600,
+          backgroundColor: 'rgba(255, 255, 255, 0.92)', borderColor: 'rgba(125, 104, 168, 0.35)', borderWidth: 1,
+          borderRadius: 3, padding: [2, 4],
         },
       },
       {
@@ -199,7 +213,7 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers) {
       },
       {
         name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd.map((point) => point.dif),
-        showSymbol: false, silent: true, lineStyle: { color: '#2d302d', width: 1 },
+        showSymbol: false, silent: true, lineStyle: { color: '#1a1d21', width: 1 },
       },
       {
         name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: macd.map((point) => point.dea),
@@ -216,7 +230,7 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers) {
   }
 }
 
-export default function MarketChart({ candles, analysis, macd, signals, timeframe, layers }) {
+export default function MarketChart({ candles, analysis, macd, signals, timeframe, layers, decimals }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
 
@@ -234,8 +248,8 @@ export default function MarketChart({ candles, analysis, macd, signals, timefram
 
   useEffect(() => {
     if (!chartRef.current) return
-    chartRef.current.setOption(buildOption(candles, analysis, macd, signals, timeframe, layers), { notMerge: true })
-  }, [candles, analysis, macd, signals, timeframe, layers])
+    chartRef.current.setOption(buildOption(candles, analysis, macd, signals, timeframe, layers, decimals), { notMerge: true })
+  }, [candles, analysis, macd, signals, timeframe, layers, decimals])
 
   return <div className="market-chart" ref={containerRef} role="img" aria-label={`${timeframe} 周期 K 线、成交量、MACD 与缠论结构图`} />
 }

@@ -71,6 +71,40 @@ class MarketDataFallbackTests(unittest.TestCase):
 
         self.assertEqual(result, "fallback")
 
+    def test_repeated_primary_failures_skip_primary_during_cooldown(self):
+        class CountingFailing:
+            calls = 0
+
+            def read(self, secid, timeframe, force_refresh=False):
+                CountingFailing.calls += 1
+                raise MarketDataUnavailable("down")
+
+        now = [0.0]
+        primary = CountingFailing()
+        reader = FallbackMarketDataReader(primary, StubReader(), failure_threshold=3, cooldown_seconds=300,
+                                          clock=lambda: now[0])
+        for _ in range(10):
+            self.assertEqual(reader.read("0.301162", TimeFrame.ONE_DAY), "fallback")
+        self.assertEqual(primary.calls, 3)
+        now[0] = 301
+        reader.read("0.301162", TimeFrame.ONE_DAY)
+        reader.read("0.301162", TimeFrame.ONE_DAY)
+        self.assertEqual(primary.calls, 4)
+
+    def test_primary_success_resets_failure_count(self):
+        class Flaky:
+            def __init__(self):
+                self.results = iter(["fail", "fail", "ok", "fail", "fail", "ok"])
+
+            def read(self, secid, timeframe, force_refresh=False):
+                if next(self.results) == "fail":
+                    raise MarketDataUnavailable("down")
+                return "primary"
+
+        reader = FallbackMarketDataReader(Flaky(), StubReader(), failure_threshold=3, clock=lambda: 0.0)
+        results = [reader.read("0.301162", TimeFrame.ONE_DAY) for _ in range(6)]
+        self.assertEqual(results, ["fallback", "fallback", "primary", "fallback", "fallback", "primary"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,19 +24,19 @@ backend/
 │   └── services/              # 缠论分析、MACD、背驰与买卖点、多级别联立、结构判断、分时序列合并等纯领域算法
 ├── application/
 │   ├── ports/
-│   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索、榜单候选池、小程序外链）
-│   │   ├── writers.py         # 写入端口（报价采样）
+│   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索、全市场清单、收盘日、榜单快照、小程序外链）
+│   │   ├── writers.py         # 写入端口（报价采样、榜单快照与检查点）
 │   │   └── auth.py            # 身份兑换网关与会话编解码端口
 │   ├── queries/               # 只读用例（含复用快照查询的榜单与多级别联立、当前用户、小程序外链）
-│   └── commands/              # 写用例（记录报价采样、一次性 code 登录）
+│   └── commands/              # 写用例（记录报价采样、一次性 code 登录、构建收盘榜单）
 ├── infrastructure/
 │   ├── http/                  # 通用传输客户端
-│   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池读取适配器；新浪备用 K 线与主备切换装饰器
+│   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池读取适配器；新浪备用 K 线（按新浪前复权因子换算，与东方财富口径一致）与证券清单，以及主备切换装饰器（主源连续失败时短时熔断）
 │   ├── cache/                 # 缓存装饰器，不污染用例
-│   ├── persistence/           # 本地 JSON 报价存储，同时实现分时 Reader 与 Writer
+│   ├── persistence/           # 本地 JSON 报价存储、SQLite 榜单快照/租约/检查点，各自实现独立 Reader/Writer
 │   └── auth/                  # 报名系统网关（code 兑换身份、URL Link）与 HMAC 签名会话
 ├── interfaces/api/            # FastAPI 路由（行情 routes.py、登录 auth_routes.py）、Pydantic DTO、异常映射
-└── app/                       # 组合根、环境配置 settings.py 与应用启动
+└── app/                       # 组合根、环境配置 settings.py、应用启动与收盘榜单后台生命周期
 ```
 
 ### 登录与鉴权约定
@@ -63,9 +63,17 @@ backend/
 - Query 只能读取，不得产生数据库写入、修改配置或其他业务副作用。
 - 新增写入功能时建立 `application/commands` 和 `application/ports/writers.py`，由 Command 调用 Writer。
 - Reader 与 Writer 分开定义，不创建一个同时承担所有读写的巨型 Repository。
-- 当前唯一的业务写入是实时报价采样（`POST /api/quote/samples` → `RecordQuoteSampleCommand` → `QuoteWriter`）；登录（`LoginWithWebviewCodeCommand`）会消费一次性 code 并签发会话，因此按 Command 处理。不得为了形式完整创建空写库或无意义 Command。
+- 业务写入包括实时报价采样（`RecordQuoteSampleCommand` → `QuoteWriter`）、消费一次性 code 的登录，以及后台构建收盘榜单（`BuildDailyRankingsCommand` → `RankingWriter`）。不得为了形式完整创建空写库或无意义 Command。
 - 缓存是读取适配器的装饰器；强制刷新只能绕过读取缓存，不得被当作业务写入。
 - 新增数据源时实现对应端口，在 `backend/app/container.py` 注册；领域算法和 API 路由不应跟随修改。
+
+### 全市场收盘榜单
+
+- 覆盖沪深 A 股及境内上市 ETF，包含境内跨境 ETF。完整分页枚举、去重并核对数量，不截取成交额前 40 只；清单不完整不发布新结果。东方财富清单不可用时改用新浪行情中心沪 A、深 A、ETF 三个节点，逐节点核对数量。
+- `GET /api/rankings` 只读取持久化快照和状态，不触发分析或写库；页面刷新和每分钟状态读取均不重算。
+- `app/ranking_worker.py` 在应用 lifespan 中管理后台线程，默认北京时间 15:30 后构建最近已收盘交易日的日线榜单。实际交易日由指数日 K 确定，同交易日成功发布后不重复；启动时可补齐缺失收盘日，失败至少等待 15 分钟重试。
+- 后台只使用指定收盘日及之前的 K 线，要求存在该日有效数据，并绕过盘中读取缓存；默认 4 线程、单只至多重试 2 次。SQLite 检查点支持恢复，进程停止时释放租约、下次启动立即续算，租约避免多进程重复更新；全部失败保留旧快照，部分失败明确展示覆盖数。
+- `var/rankings/` 是运行时 SQLite 数据，不入库。查询使用只读连接，Command 通过 Writer 原子替换快照。页面区分首次准备和真正空榜，并展示收盘日期与分析覆盖数。
 
 ## 三、前端目录与职责
 
@@ -93,12 +101,27 @@ frontend/src/
 - 展示组件可以负责本地 UI 状态，但行情统计和可复用业务判断应放入 `domain`，请求编排应放入 `application` 或展示 Hooks。
 - 新增用例在 `frontend/src/app/container.js` 装配并注入，不允许组件直接实例化基础设施。
 
+### 前端视觉规范
+
+界面按国内行情软件的习惯设计，是给交易者用的分析工具，不做营销页式的装饰。颜色与尺寸统一使用 `frontend/src/styles.css` 顶部的变量，新增界面不得另起一套配色。
+
+- 配色：白色内容面 `--sheet`，冷灰分隔色 `--page` `#eef0f2`；墨蓝 `--accent` `#2e4a6e` 是唯一主色，用于选中、链接和主按钮。红 `--up` / 绿 `--down` 只表示涨跌与买卖点，不得用作主色或装饰色。图表语义色固定：金色 `--gold` 为笔，墨蓝为线段，紫色 `--violet` 为笔中枢，蓝灰为分型。ECharts 配置中的颜色与上述变量保持一致。
+- 版式：手机端整页白底、内容通栏，区块之间用 8px `--page` 色带分隔，列表行用 1px `--line` 细线；不使用漂浮卡片和投影。桌面端为带 1px 边框的白色面板，同样不加投影。只有弹层（搜索结果、术语说明、登录引导）使用 `--overlay-shadow`。
+- 控件：圆角只用于小控件（`--radius` 4px），面板最多 6px；不使用胶囊形按钮或标签。周期切换用文字标签加短下划线；图层开关画出各自在图上的笔触作为图例。
+- 层级靠字重、字号与留白表达：正文 13–15px，区块标题 15–16px 600，价格 700 并使用 `tabular-nums`；不用浅色底提示块、带底色的图标方块或"大数字 + 小标签"统计卡片。
+- 文案：不用"A · B · C"中点拼接，并列信息用空格分隔或用逗号写成一句话；不用全大写标签。按钮写明动作，空状态和错误提示说明发生了什么、下一步怎么做。
+- 价格统一通过 `domain/market.js` 的 `formatPrice` 格式化，位数由 `getPriceDecimals(stock)` 决定：股票 2 位，ETF（`market === 'ETF'`）3 位；不在组件中直接 `toFixed`。
+- 图表上的文字标签（如笔中枢名称）需单独成层绘制在最上方，不得被 K 线和笔遮挡。
+- 修改视觉规范时同步更新本节，并在手机（390px）与桌面（1440px）宽度下截图检查。
+
 ## 四、运行配置
 
 - CORS 来源由环境变量 `CHANLUN_CORS_ORIGINS` 控制，多个来源用逗号分隔；未设置时为 `*`，允许任意客户端访问。不得在代码中写死主机或 IP。
 - 开发时前端通过 Vite 代理 `/api` 到 `127.0.0.1:8000`，同源访问不依赖 CORS；会话 cookie 依赖同源部署。
+- 微信开发者工具可能使用较旧的网页内核，读取数组末项使用下标，不依赖 `Array.prototype.at`；前端 Vite 开发服务会在应用模块前注入启动错误提示，白屏时直接显示错误与浏览器信息并隐藏 webview 桥接参数，正式构建不包含该提示。
 - 生产部署在报名系统已配置的 web-view 业务域名下：`https://match.oryjk.cn/chanlun/`。前端以 `CHANLUN_BASE_PATH=/chanlun/ bun run build` 构建，API 请求自动带上该前缀，由 nginx 把 `/chanlun/api/` 转发到缠观后端。
 - 登录相关环境变量：`CHANLUN_REGISTRATION_API_BASE`（报名系统 App API 根路径，默认 `http://127.0.0.1:18081/api/v1/app`）、`CHANLUN_SESSION_SECRET`（至少 32 字符；未配置时使用临时密钥，重启后登录态失效）、`CHANLUN_SESSION_MAX_AGE`（秒，默认 30 天）、`CHANLUN_SESSION_COOKIE_SECURE`（HTTPS 部署设为 `true`）。
+- 榜单环境变量：`CHANLUN_RANKING_RUN_AT`（北京时间，默认 `15:30`，必须不早于 `15:00`）、`CHANLUN_RANKING_WORKERS`（默认 `4`，范围 1–16）、`CHANLUN_RANKING_STORE_PATH`（默认 `var/rankings/rankings.sqlite3`）、`CHANLUN_RANKING_ENABLED`（默认 `true`，隔离测试可设 `false`）。
 
 ## 五、变更检查
 

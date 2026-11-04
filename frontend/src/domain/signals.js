@@ -20,9 +20,187 @@ export function getRecentPoints(signals, count = 4) {
 }
 
 export function getLatestDivergence(signals) {
-  return signals?.divergences.at(-1) ?? null
+  return signals?.divergences[signals.divergences.length - 1] ?? null
 }
 
 export function divergenceLabel(divergence) {
   return `${divergence.kind === 'trend' ? '趋势' : '盘整'}${divergence.direction === 'bottom' ? '底' : '顶'}背驰`
+}
+
+function pad2(number) {
+  return String(number).padStart(2, '0')
+}
+
+export function formatShortDate(value) {
+  if (!value) return ''
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) return `${match[2]}-${match[3]}`
+  const date = new Date(value)
+  return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+}
+
+export function formatSignalDate(value, timeframe = '1d') {
+  if (!value) return ''
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (timeframe === '1d' && match) {
+    return `${match[1]}-${match[2]}-${match[3]}`
+  }
+  const date = new Date(value)
+  if (timeframe === '1d') {
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+  }
+  return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
+export function getPriceChangeFromPoint(point, latestPrice) {
+  if (!point || !Number.isFinite(point.price) || point.price <= 0 || !Number.isFinite(latestPrice)) {
+    return null
+  }
+  const percent = ((latestPrice - point.price) / point.price) * 100
+  const rounded = Number(percent.toFixed(2))
+  const confirmed = Boolean(point.confirmed)
+  return {
+    date: formatSignalDate(point.time, '1d'),
+    shortDate: formatShortDate(point.time),
+    confirmed,
+    statusLabel: confirmed ? '已确认' : '待确认',
+    percent: rounded,
+    formatted: `${rounded >= 0 ? '+' : ''}${rounded.toFixed(2)}%`,
+  }
+}
+
+export function getLatestPointsBySide(points = []) {
+  let buyPoint = null
+  let sellPoint = null
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const point = points[index]
+    if (!buyPoint && point?.side === 'buy') buyPoint = point
+    if (!sellPoint && point?.side === 'sell') sellPoint = point
+    if (buyPoint && sellPoint) break
+  }
+  return { buyPoint, sellPoint }
+}
+
+export function formatInvalidationDistance(bias, latestPrice, invalidationPrice, formattedInvalidation) {
+  if (!Number.isFinite(invalidationPrice) || !Number.isFinite(latestPrice) || latestPrice <= 0) {
+    return '—'
+  }
+  const diffPercent = ((invalidationPrice - latestPrice) / latestPrice) * 100
+  const signed = `${diffPercent >= 0 ? '+' : ''}${diffPercent.toFixed(1)}%`
+  const action = bias === 'bearish' ? '突破' : '跌破'
+  return `${action} ${formattedInvalidation} 失效 (${signed})`
+}
+
+export function evaluateActionConclusion({ bias, latestPrice, invalidationPrice, latestPoint }) {
+  const stopDistance = Number.isFinite(invalidationPrice) && Number.isFinite(latestPrice) && latestPrice > 0
+    ? (Math.abs(latestPrice - invalidationPrice) / latestPrice) * 100
+    : Infinity
+
+  if (bias === 'bullish') {
+    if (latestPoint?.side === 'buy' && latestPoint.price > 0 && Number.isFinite(latestPrice)) {
+      const move = ((latestPrice - latestPoint.price) / latestPoint.price) * 100
+      if (move >= -2 && move <= 12 && stopDistance <= 10) {
+        return {
+          label: '可关注买入',
+          tone: 'up',
+          summary: '近期出现买点且距失效位较近，可结合小级别同向印证观察介入',
+        }
+      }
+      if (move >= -2 && move <= 12) {
+        return {
+          label: '买点附近，止损偏宽',
+          tone: 'neutral',
+          summary: '现价仍在买点附近，但距中枢上沿失效位较远，需注意回撤空间',
+        }
+      }
+      if (move > 12) {
+        return {
+          label: '已涨高，不宜追买',
+          tone: 'caution',
+          summary: '现价较买点涨幅已大，追高盈亏比不佳，宜等待回踩确认',
+        }
+      }
+      return {
+        label: '回调买点下方，等企稳',
+        tone: 'neutral',
+        summary: '现价回落至买点下方但仍在中枢上沿之上，等待止跌信号',
+      }
+    }
+    if (latestPoint?.side === 'sell') {
+      if (Number.isFinite(latestPrice) && Number.isFinite(latestPoint.price) && latestPrice > latestPoint.price) {
+        return {
+          label: '刚突破中枢，等回踩买点',
+          tone: 'neutral',
+          summary: '现价已站上中枢上沿并突破前期卖点，等待回踩不破确认买点',
+        }
+      }
+      return {
+        label: '出现卖点，暂不买入',
+        tone: 'down',
+        summary: '价格虽在中枢上方，但最近信号为卖点，注意冲高回落风险',
+      }
+    }
+    return {
+      label: '偏多结构，等待买点',
+      tone: 'neutral',
+      summary: '价格位于中枢上方，等待回抽出现买点信号',
+    }
+  }
+
+  if (bias === 'bearish') {
+    if (latestPoint?.side === 'sell' && latestPoint.price > 0 && Number.isFinite(latestPrice)) {
+      const move = ((latestPoint.price - latestPrice) / latestPoint.price) * 100
+      if (move >= -2 && move <= 12 && stopDistance <= 10) {
+        return {
+          label: '卖点附近，宜规避',
+          tone: 'down',
+          summary: '近期出现卖点且处于破位初期，不宜买入，注意规避风险',
+        }
+      }
+      if (move >= -2 && move <= 12) {
+        return {
+          label: '出现卖点，注意风险',
+          tone: 'down',
+          summary: '处于卖点附近且结构偏空，暂不介入',
+        }
+      }
+      if (move > 12) {
+        return {
+          label: '已深跌，勿盲目抄底',
+          tone: 'caution',
+          summary: '现价较卖点跌幅已深，需等待底背驰或一类买点信号',
+        }
+      }
+      return {
+        label: '反抽压力位，宜观望',
+        tone: 'neutral',
+        summary: '价格反抽但尚未收复中枢下沿失效位，暂宜观望',
+      }
+    }
+    if (latestPoint?.side === 'buy') {
+      if (Number.isFinite(latestPrice) && Number.isFinite(latestPoint.price) && latestPrice < latestPoint.price) {
+        return {
+          label: '刚跌破中枢，等反抽确认',
+          tone: 'down',
+          summary: '现价已跌破中枢下沿及前期买点，结构转弱，暂宜规避',
+        }
+      }
+      return {
+        label: '低位买点，观察筑底',
+        tone: 'neutral',
+        summary: '中枢下方出现买点信号，需收复中枢下沿确认转强',
+      }
+    }
+    return {
+      label: '偏空结构，暂不买入',
+      tone: 'down',
+      summary: '价格位于中枢下方，尚未出现明确买点信号',
+    }
+  }
+
+  return {
+    label: '中枢震荡，暂不操作',
+    tone: 'neutral',
+    summary: '价格尚未离开笔中枢核心区间或方向未达成一致，等待突破信号',
+  }
 }
