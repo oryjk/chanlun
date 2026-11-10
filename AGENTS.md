@@ -131,7 +131,7 @@ frontend/src/
 
 ## 五、变更检查
 
-修改架构或目录职责时必须同步更新本文件。完成变更后至少执行：
+修改架构或目录职责时必须同步更新本文件；分层依赖由 `tests/test_architecture.py` 与 `frontend/src/architecture.test.js` 自动检查。完成变更后至少执行：
 
 ```bash
 uv run python -m unittest discover -s tests
