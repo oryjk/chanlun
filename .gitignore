@@ -29,3 +29,14 @@ logs/
 *.log
 var/quotes/
 var/rankings/
+var/accounts/
+
+# Native Apple builds and local signing configuration
+ios/Local.xcconfig
+ios/build/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcarchive
+*.ipa
+*.p8

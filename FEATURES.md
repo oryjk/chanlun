@@ -25,10 +25,11 @@
 
 ## 进行中
 
-- 无
+- 原生 iPhone/iPad 首版：已编写 SwiftUI 页面、UIKit K 线图、分时与榜单、Apple 登录后端及 Xcode 工程；后端/H5 与 Swift 静态检查已验证，待在 Mac 完成编译、XCTest、真机和 TestFlight 验证。
 
 ## 下一步
 
+- 在 Mac 按 `ios/README.md` 设置团队、Bundle ID 与 HTTPS API，完成原生编译、双端交互与真实 Apple 登录验证后进入 TestFlight。
 - 按逐日可知数据回放验证量价辅助条件，分别报告失效率、信号覆盖、确认延迟与扣费结果；验证前不启用量能硬过滤。
 - 在 Mac 微信开发者工具重新进入缠观，若仍启动失败则读取页面上的诊断信息。
 - 公网 match.oryjk.cn/chanlun/ 仍待部署对应 H5 与 API 路由。

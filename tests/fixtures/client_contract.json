@@ -1,0 +1,56 @@
+{
+  "cases": [
+    {
+      "name": "candidate buy",
+      "bias": "bullish", "latest": 12,
+      "point": {"kind": 3, "side": "buy", "pen_id": 1, "candle_index": 0, "time": "2026-11-10T15:00:00+08:00", "price": 10, "confirmed": false, "reason": "fixture"},
+      "quality": {"state": "candidate"},
+      "expectedLabel": "候选买点，等待确认"
+    },
+    {
+      "name": "confirmed buy with checked history",
+      "bias": "bullish", "latest": 12,
+      "point": {"kind": 3, "side": "buy", "pen_id": 1, "candle_index": 0, "time": "2026-11-10T15:00:00+08:00", "price": 10, "confirmed": true, "reason": "fixture"},
+      "quality": {"state": "confirmed", "history_status": "checked_from_pivot"},
+      "expectedLabel": "买点结构已确认"
+    },
+    {
+      "name": "recovered price does not revive invalidated buy",
+      "bias": "bullish", "latest": 20,
+      "point": {"kind": 3, "side": "buy", "pen_id": 1, "candle_index": 0, "time": "2026-11-10T15:00:00+08:00", "price": 10, "confirmed": true, "reason": "fixture"},
+      "quality": {"state": "confirmed", "history_status": "invalidated"},
+      "expectedLabel": "买点结构已失效"
+    },
+    {
+      "name": "confirmed without quality stays incomplete",
+      "bias": "bullish", "latest": 12,
+      "point": {"kind": 2, "side": "buy", "pen_id": 1, "candle_index": 0, "time": "2026-11-10T15:00:00+08:00", "price": 10, "confirmed": true, "reason": "fixture"},
+      "quality": null,
+      "expectedLabel": "结构已确认，证据待补齐"
+    },
+    {
+      "name": "confirmed with unknown history stays observation",
+      "bias": "bullish", "latest": 12,
+      "point": {"kind": 2, "side": "buy", "pen_id": 1, "candle_index": 0, "time": "2026-11-10T15:00:00+08:00", "price": 10, "confirmed": true, "reason": "fixture"},
+      "quality": {"state": "confirmed", "history_status": "unknown"},
+      "expectedLabel": "结构已确认，历史待核对"
+    },
+    {
+      "name": "candidate sell",
+      "bias": "bearish", "latest": 8,
+      "point": {"kind": 1, "side": "sell", "pen_id": 1, "candle_index": 0, "time": "2026-11-10T15:00:00+08:00", "price": 10, "confirmed": false, "reason": "fixture"},
+      "quality": {"state": "candidate"},
+      "expectedLabel": "候选卖点，注意风险"
+    },
+    {
+      "name": "bullish without point",
+      "bias": "bullish", "latest": 12, "point": null, "quality": null,
+      "expectedLabel": "偏多结构，等待买点"
+    },
+    {
+      "name": "neutral without point",
+      "bias": "neutral", "latest": 10, "point": null, "quality": null,
+      "expectedLabel": "中枢震荡，暂不操作"
+    }
+  ]
+}

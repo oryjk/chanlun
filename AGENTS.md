@@ -41,7 +41,7 @@ backend/
 
 ### 登录与鉴权约定
 
-- 缠观不自建账号，身份来自报名系统（`../registration_system`）小程序：小程序 `pages/chanlun/index` 落地页默认登录后，以 web-view 打开缠观并带上一次性 `webview_code`（60 秒、单次有效）。
+- H5 身份来自报名系统（`../registration_system`）小程序，不在 H5 自建账号：小程序 `pages/chanlun/index` 落地页默认登录后，以 web-view 打开缠观并带上一次性 `webview_code`（60 秒、单次有效）。原生 App 使用独立的 Apple 身份映射，见第七节。
 - 前端 `main.jsx` 渲染前取出并抹掉地址栏中的 `webview_code` 等桥接参数，交给 `POST /api/auth/webview-login`；后端用 code 调报名系统 `/auth/webview-codes/exchange` 换 JWT、再读 `/users/me`，然后签发缠观自己的 HttpOnly cookie `chanlun_session`（HMAC 签名、无状态、默认 30 天）。报名系统 JWT 不下发到前端。
 - 不登录也能使用全部行情功能。收藏、跟踪等个人功能必须通过 `useAuth().requireLogin(action)` 调用：已登录直接执行，游客弹出登录引导。
 - 登录引导按环境区分：小程序 web-view 内通过 `wx.miniProgram.redirectTo` 回到落地页登录并自动返回原页面；微信内浏览器或普通浏览器调 `GET /api/auth/mini-program-link` 获取报名系统生成的 URL Link。回跳参数只保留 `secid`、`timeframe`、`view`，且只允许 `[A-Za-z0-9._=&-]`，与小程序和报名系统规则一致。
@@ -145,3 +145,17 @@ cd frontend && bun test src && bun run build
 
 - 除非用户特别说明，所有开发都直接在 `main` 分支上进行，不另建功能分支。
 - 只在用户要求时提交或推送；提交前完成第五节的变更检查。
+
+## 七、原生 iPhone 与 iPad
+
+- `ios/ChanGuan/` 使用 SwiftUI 页面与 UIKit K 线图，最低 iOS/iPadOS 17，同一 target 支持 iPhone/iPad、横竖屏和窄分屏。`ios/README.md` 记录 Mac 构建与 TestFlight 接续步骤。
+- 原生端同样遵循 `Presentation -> Application -> Domain`，`Infrastructure` 实现读写/身份端口，`App` 是唯一组合根。Domain/Application 只使用 Foundation，不导入 UIKit、SwiftUI、Security、AuthenticationServices；页面不创建具体网络或存储适配器。
+- `Domain` 保存不可变行情/信号、格式化、时区、分时合并、视窗与坐标规则；`Application` 定义行情 Reader、采样 Writer、身份与本地会话端口；`Infrastructure` 负责明确 JSON DTO 边界、URLSession、Keychain、Apple 授权与页面选择持久化；`Presentation/Charts` 负责原生绘制、手势与 SwiftUI 桥接，不能读取账号或访问网络。
+- 图表主图、量与 MACD 共用视窗，文字最后绘制；候选/确认、信号失效、端点日期与未知识别时间沿用 H5 口径。证券标识在客户端视为不透明字符串，不在图表与页面解析数据源市场号。
+- 当前社交只是未来可能性，不创建社交 API、数据表或界面。图表仅通过分层渲染和坐标/选择事件保持可扩展。
+- 原生登录使用 `POST /api/app-auth/challenge` 与 `POST /api/app-auth/apple`。服务端验证 Apple 签名、issuer、audience、过期时间及挑战 nonce 后兑换 code。挑战 5 分钟且原子消费，App 会话默认 30 天；客户端 Keychain 保存随机 Bearer，服务端只存摘要。H5 Cookie 与原生会话不混用。
+- 原生账号模型位于 `domain/app_auth.py`，端口位于 `application/ports/app_auth.py`，Command 位于 `application/commands/app_login.py`，只读会话 Query 位于 `application/queries/app_session.py`。`infrastructure/auth/apple_gateway.py` 验证 Apple 凭证，`infrastructure/persistence/sqlite_app_auth.py` 实现独立读写端口，`interfaces/api/app_auth_routes.py` 负责 HTTP 边界，`app/app_auth.py` 是原生身份组合根并管理撤销重试生命周期。
+- 原生内部用户使用 UUID，Apple issuer/subject 映射与报名系统整数 ID 隔离，不按邮箱自动合并，不实现微信绑定。删除账号先原子删除身份/全部会话并入队，再由后台撤销 Apple token；24 小时删除回执支持响应丢失后的幂等重试。Apple 通知验签、去重并核对事件时间，避免首次登录中的撤销被遗漏或旧通知删除新授权。
+- Apple 登录默认关闭：`CHANLUN_APPLE_ENABLED=false`。启用需设置 `CHANLUN_APPLE_CLIENT_ID`（Bundle ID）、`CHANLUN_APPLE_TEAM_ID`、`CHANLUN_APPLE_KEY_ID`、`CHANLUN_APPLE_KEY_PATH`、至少 32 字符的稳定 `CHANLUN_APPLE_TOKEN_ENCRYPTION_KEY`。账号库由 `CHANLUN_APP_AUTH_STORE_PATH` 控制，默认 `var/accounts/accounts.sqlite3`；私钥、`var/accounts/` 与 `ios/Local.xcconfig` 不入库。
+- 原生端停止不可见页面和后台轮询，恢复前台重新判断市场时段和会话；请求与认证各自使用 generation，旧响应不得覆盖新证券或恢复已撤销的身份。报价按市场日期去重合并，避免跨日曲线混合。
+- 当前机器没有 Swift/Xcode，用户明确允许先写源码并提交，随后在 Mac 编译。这里必须执行 `uv run --with tree-sitter --with tree-sitter-swift python ios/scripts/check_sources.py --syntax` 和后端/H5 检查；Swift 类型检查、Xcode Build、XCTest、模拟器/真机截图、签名和 TestFlight 安装必须在 Mac 完成，不能以静态语法检查冒充通过。
