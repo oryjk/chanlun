@@ -87,45 +87,49 @@ export function formatInvalidationDistance(bias, latestPrice, invalidationPrice,
   }
   const diffPercent = ((invalidationPrice - latestPrice) / latestPrice) * 100
   const signed = `${diffPercent >= 0 ? '+' : ''}${diffPercent.toFixed(1)}%`
-  const action = bias === 'bearish' ? '突破' : '跌破'
+  const action = bias === 'bearish' ? '收盘突破' : '收盘跌破'
   return `${action} ${formattedInvalidation} 失效 (${signed})`
 }
 
-export function evaluateActionConclusion({ bias, latestPrice, invalidationPrice, latestPoint }) {
-  const stopDistance = Number.isFinite(invalidationPrice) && Number.isFinite(latestPrice) && latestPrice > 0
-    ? (Math.abs(latestPrice - invalidationPrice) / latestPrice) * 100
-    : Infinity
-
-  if (bias === 'bullish') {
-    if (latestPoint?.side === 'buy' && latestPoint.price > 0 && Number.isFinite(latestPrice)) {
-      const move = ((latestPrice - latestPoint.price) / latestPoint.price) * 100
-      if (move >= -2 && move <= 12 && stopDistance <= 10) {
-        return {
-          label: '可关注买入',
-          tone: 'up',
-          summary: '近期出现买点且距失效位较近，可结合小级别同向印证观察介入',
-        }
-      }
-      if (move >= -2 && move <= 12) {
-        return {
-          label: '买点附近，止损偏宽',
-          tone: 'neutral',
-          summary: '现价仍在买点附近，但距中枢上沿失效位较远，需注意回撤空间',
-        }
-      }
-      if (move > 12) {
-        return {
-          label: '已涨高，不宜追买',
-          tone: 'caution',
-          summary: '现价较买点涨幅已大，追高盈亏比不佳，宜等待回踩确认',
-        }
-      }
-      return {
-        label: '回调买点下方，等企稳',
-        tone: 'neutral',
-        summary: '现价回落至买点下方但仍在中枢上沿之上，等待止跌信号',
-      }
+export function evaluateActionConclusion({ bias, latestPrice, latestPoint, signalQuality }) {
+  if (latestPoint && (signalQuality?.state === 'invalidated' || signalQuality?.history_status === 'invalidated'
+      || signalQuality?.first_reference_crossed_at)) {
+    return {
+      label: `${latestPoint.side === 'buy' ? '买' : '卖'}点结构已失效`,
+      tone: latestPoint.side === 'buy' ? 'neutral' : 'down',
+      summary: '已有收盘价越过该信号对应的失效参考，即使价格恢复也不继续沿用原信号',
     }
+  }
+  if (latestPoint && !latestPoint.confirmed) {
+    return {
+      label: latestPoint.side === 'buy' ? '候选买点，等待确认' : '候选卖点，注意风险',
+      tone: latestPoint.side === 'sell' ? 'down' : 'neutral',
+      summary: '结构端点仍可能修正，候选状态不能作为已确认的买卖依据',
+    }
+  }
+  const aligned = latestPoint?.side === (bias === 'bullish' ? 'buy' : bias === 'bearish' ? 'sell' : '')
+  if (aligned && signalQuality?.state !== 'confirmed') {
+    return {
+      label: '结构已确认，证据待补齐',
+      tone: bias === 'bearish' ? 'down' : 'neutral',
+      summary: '尚不能核对该信号的有效性或当前 K 线未收盘，等待完整评价',
+    }
+  }
+  if (aligned && signalQuality?.history_status !== 'checked_from_pivot') {
+    return {
+      label: '结构已确认，历史待核对',
+      tone: bias === 'bearish' ? 'down' : 'neutral',
+      summary: '尚未核对端点起的已收盘 K 线是否曾越界，暂列观察',
+    }
+  }
+  if (aligned) {
+    return {
+      label: latestPoint.side === 'buy' ? '买点结构已确认' : '卖点结构已确认',
+      tone: latestPoint.side === 'buy' ? 'neutral' : 'down',
+      summary: '仅代表结构确认，量价辅助条件尚未验证；需另行制定入场、退出与仓位规则',
+    }
+  }
+  if (bias === 'bullish') {
     if (latestPoint?.side === 'sell') {
       if (Number.isFinite(latestPrice) && Number.isFinite(latestPoint.price) && latestPrice > latestPoint.price) {
         return {
@@ -148,35 +152,6 @@ export function evaluateActionConclusion({ bias, latestPrice, invalidationPrice,
   }
 
   if (bias === 'bearish') {
-    if (latestPoint?.side === 'sell' && latestPoint.price > 0 && Number.isFinite(latestPrice)) {
-      const move = ((latestPoint.price - latestPrice) / latestPoint.price) * 100
-      if (move >= -2 && move <= 12 && stopDistance <= 10) {
-        return {
-          label: '卖点附近，宜规避',
-          tone: 'down',
-          summary: '近期出现卖点且处于破位初期，不宜买入，注意规避风险',
-        }
-      }
-      if (move >= -2 && move <= 12) {
-        return {
-          label: '出现卖点，注意风险',
-          tone: 'down',
-          summary: '处于卖点附近且结构偏空，暂不介入',
-        }
-      }
-      if (move > 12) {
-        return {
-          label: '已深跌，勿盲目抄底',
-          tone: 'caution',
-          summary: '现价较卖点跌幅已深，需等待底背驰或一类买点信号',
-        }
-      }
-      return {
-        label: '反抽压力位，宜观望',
-        tone: 'neutral',
-        summary: '价格反抽但尚未收复中枢下沿失效位，暂宜观望',
-      }
-    }
     if (latestPoint?.side === 'buy') {
       if (Number.isFinite(latestPrice) && Number.isFinite(latestPoint.price) && latestPrice < latestPoint.price) {
         return {

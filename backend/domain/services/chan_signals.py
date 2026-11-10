@@ -129,6 +129,8 @@ class ChanSignalAnalyzer:
             time=pen.end_time,
             price=pen.end_price,
             confirmed=pen.confirmed,
+            invalidation_price=pen.end_price,
+            source_zone_id=divergence.zhongshu_id,
             reason=(
                 f"{trend_label}趋势中离开中枢 {divergence.zhongshu_id} 的一段创新"
                 f"{'低' if side == 'buy' else '高'}，MACD 面积 {divergence.leaving_area:.4g} "
@@ -151,6 +153,8 @@ class ChanSignalAnalyzer:
             time=pullback.end_time,
             price=pullback.end_price,
             confirmed=pullback.confirmed,
+            invalidation_price=first.price,
+            source_zone_id=first.source_zone_id,
             reason=(
                 f"一类{SIDE_LABELS[first.side]}点后首次"
                 f"{'回调未破前低' if first.side == 'buy' else '反弹未过前高'} {first.price:g}"
@@ -175,5 +179,7 @@ class ChanSignalAnalyzer:
             time=pullback.end_time,
             price=pullback.end_price,
             confirmed=pullback.confirmed,
+            invalidation_price=zone.high if side == "buy" else zone.low,
+            source_zone_id=zone.id,
             reason=detail,
         )

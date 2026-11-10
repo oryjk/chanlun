@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from backend.domain.analysis_version import ANALYSIS_VERSION
 from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -114,8 +115,8 @@ class DailyCommandTests(unittest.TestCase):
 
     def test_interrupted_batch_resumes_saved_successful_items(self):
         snapshots = Snapshots()
-        self.assertFalse(self.command(snapshots).execute(DAY, cancelled=lambda: len(self.store.read_items(DAY)) >= 2))
-        saved = {item.secid for item in self.store.read_items(DAY) if item.error is None}
+        self.assertFalse(self.command(snapshots).execute(DAY, cancelled=lambda: len(self.store.read_items(DAY, analysis_version=ANALYSIS_VERSION)) >= 2))
+        saved = {item.secid for item in self.store.read_items(DAY, analysis_version=ANALYSIS_VERSION) if item.error is None}
         self.assertGreaterEqual(len(saved), 2)
         self.assertEqual(self.store.read().progress.state, "preparing")
         self.assertIsNone(self.store.read().progress.error)

@@ -4,6 +4,24 @@ function toStock(dto) {
   return { secid: dto.secid, symbol: dto.symbol, name: dto.name, market: dto.market }
 }
 
+function toSignalQuality(dto) {
+  if (!dto) return null
+  return {
+    state: dto.state, invalidation_price: dto.invalidation_price,
+    momentum_status: dto.momentum_status, volume_status: dto.volume_status,
+    macd_histogram: dto.macd_histogram, macd_area_ratio: dto.macd_area_ratio,
+    pullback_macd_ratio: dto.pullback_macd_ratio,
+    reference_touched: dto.reference_touched ?? null,
+    bars_since_pivot: dto.bars_since_pivot ?? null,
+    first_reference_crossed_at: dto.first_reference_crossed_at || null,
+    first_reference_crossed_close: dto.first_reference_crossed_close ?? null,
+    history_checked_through: dto.history_checked_through || null,
+    breakout_volume_ratio: dto.breakout_volume_ratio, pullback_volume_ratio: dto.pullback_volume_ratio,
+    history_status: dto.history_status || 'unknown', first_detected_at: dto.first_detected_at || null,
+    confirmed_at: dto.confirmed_at || null, reasons: [...(dto.reasons || [])],
+  }
+}
+
 function toMarketSnapshot(dto) {
   return {
     instrument: { ...dto.instrument },
@@ -26,6 +44,7 @@ function toMarketSnapshot(dto) {
       divergences: dto.signals.divergences.map((divergence) => ({ ...divergence })),
       points: dto.signals.points.map((point) => ({ ...point })),
     },
+    signal_quality: toSignalQuality(dto.signal_quality),
   }
 }
 
@@ -66,7 +85,11 @@ export function createMarketGateway() {
     },
     async getRankings(limit, signal) {
       const response = await getJson(`/api/rankings?limit=${limit}`, signal)
-      return { ...response }
+      const entries = (items) => (items || []).map((entry) => ({
+        ...entry, stock: toStock(entry.stock), signal_group: entry.signal_group || 'observation',
+        signal_quality: toSignalQuality(entry.signal_quality),
+      }))
+      return { ...response, bullish: entries(response.bullish), bearish: entries(response.bearish) }
     },
     async recordQuoteSample(quote, signal) {
       const response = await postJson('/api/quote/samples', {

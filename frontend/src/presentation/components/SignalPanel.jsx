@@ -11,6 +11,7 @@ import {
 import { GLOSSARY } from '../glossary.js'
 import TermInfo from './TermInfo.jsx'
 import { formatPrice } from '../../domain/market.js'
+import SignalEvidence from './SignalEvidence.jsx'
 
 function PointBadge({ point }) {
   return <span className={`point-badge ${point.side} ${point.confirmed ? '' : 'candidate'}`}>{pointShortLabel(point)}</span>
@@ -47,6 +48,7 @@ function ConfluenceSection({ confluence, loading, error }) {
 
 export default function SignalPanel({
   signals,
+  quality,
   timeframe = '1d',
   timeframeLabel,
   latestPrice,
@@ -56,6 +58,10 @@ export default function SignalPanel({
   decimals,
 }) {
   const points = getRecentPoints(signals)
+  const groups = [
+    { name: '已确认结构', points: points.filter((point) => point.confirmed) },
+    { name: '候选，等待确认', points: points.filter((point) => !point.confirmed) },
+  ]
   const divergence = getLatestDivergence(signals)
 
   return (
@@ -66,8 +72,13 @@ export default function SignalPanel({
       </div>
 
       {points.length > 0 ? (
+        <>
+        <p className="empty-copy">日期为结构端点，首次识别与确认时间未追溯；结构确认不等于应立即交易。</p>
+        {groups.map((group) => group.points.length > 0 && (
+        <div className="signal-subgroup" key={group.name}>
+        <h3>{group.name}</h3>
         <ul className="signal-list">
-          {points.map((point) => {
+          {group.points.map((point) => {
             const change = getPriceChangeFromPoint(point, latestPrice)
             return (
               <li key={`${point.kind}-${point.side}-${point.pen_id}`}>
@@ -75,10 +86,10 @@ export default function SignalPanel({
                 <div>
                   <strong>{pointLabel(point)}<b>{formatPrice(point.price, decimals)}</b></strong>
                   <small>
-                    <span>{formatSignalDate(point.time, timeframe)}</span>
+                    <span>结构端点 {formatSignalDate(point.time, timeframe)}</span>
                     {change && (
                       <span>
-                        较 {change.date}{' '}
+                        较端点价{' '}
                         <b className={change.percent >= 0 ? 'up' : 'down'}>{change.formatted}</b>
                       </span>
                     )}
@@ -90,6 +101,13 @@ export default function SignalPanel({
             )
           })}
         </ul>
+        </div>
+        ))}
+        {Number.isFinite(quality?.invalidation_price) && (
+          <p className="empty-copy">最近信号失效参考 {formatPrice(quality.invalidation_price, decimals)}，以完成 K 线收盘严格越界判断。</p>
+        )}
+        <SignalEvidence quality={quality} decimals={decimals} timeframeLabel={timeframeLabel} structureConfirmed={Boolean(points[0]?.confirmed)} />
+        </>
       ) : <p className="empty-copy">当前周期尚未出现买卖点</p>}
 
       {divergence && (

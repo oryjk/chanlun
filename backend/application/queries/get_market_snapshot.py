@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime, timezone
 
 from ...domain.errors import MarketDataNotFound
 from ...domain.models import MarketData, MarketSnapshot, MarketSummary, TimeFrame, validate_security_id
@@ -7,6 +7,7 @@ from ...domain.services.chan_analyzer import ChanAnalyzer
 from ...domain.services.chan_signals import ChanSignalAnalyzer
 from ...domain.services.macd import compute_macd
 from ...domain.services.structure_guidance import StructureGuidanceEvaluator
+from ...domain.services.signal_quality import SignalQualityEvaluator
 from ..ports.readers import MarketDataReader
 
 
@@ -17,11 +18,13 @@ class GetMarketSnapshotQuery:
         analyzer: ChanAnalyzer,
         guidance_evaluator: StructureGuidanceEvaluator,
         signal_analyzer: ChanSignalAnalyzer,
+        quality_evaluator: SignalQualityEvaluator | None = None,
     ):
         self._reader = reader
         self._analyzer = analyzer
         self._guidance_evaluator = guidance_evaluator
         self._signal_analyzer = signal_analyzer
+        self._quality_evaluator = quality_evaluator
 
     def execute(self, secid: str, timeframe: str, refresh: bool = False, *, through_date: date | None = None) -> MarketSnapshot:
         normalized_secid = validate_security_id(secid)
@@ -50,6 +53,7 @@ class GetMarketSnapshotQuery:
         analysis = self._analyzer.analyze(candles)
         guidance = self._guidance_evaluator.evaluate(analysis, latest.close)
         macd = compute_macd(candles)
+        signals = self._signal_analyzer.analyze(analysis, macd)
         return MarketSnapshot(
             instrument=market_data.instrument,
             timeframe=timeframe,
@@ -59,5 +63,8 @@ class GetMarketSnapshotQuery:
             summary=summary,
             guidance=guidance,
             macd=macd,
-            signals=self._signal_analyzer.analyze(analysis, macd),
+            signals=signals,
+            signal_quality=self._quality_evaluator.evaluate(
+                candles, analysis, macd, signals, timeframe=timeframe, as_of=datetime.now(timezone.utc)
+            ) if self._quality_evaluator else None,
         )

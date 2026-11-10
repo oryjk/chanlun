@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from ...domain.errors import ChanlunError
 from ...domain.models import RankingBoard, TimeFrame
+from ...domain.analysis_version import ANALYSIS_VERSION
 from ...domain.rankings import RankingItem, RankingProgress, build_ranking_entry, rank_entries
 from ..ports.readers import RankingReader, StockUniverseReader
 from ..ports.writers import RankingWriter
@@ -12,6 +13,7 @@ from ..queries.get_market_snapshot import GetMarketSnapshotQuery
 
 
 class BuildDailyRankingsCommand:
+    analysis_version = ANALYSIS_VERSION
     def __init__(self, universe: StockUniverseReader, snapshots: GetMarketSnapshotQuery,
                  reader: RankingReader, writer: RankingWriter, *, workers=4, retries=2,
                  lease_seconds=180, now=None):
@@ -38,7 +40,8 @@ class BuildDailyRankingsCommand:
         if cancelled():
             return False
         owner = uuid4().hex
-        if not self._writer.claim(trade_date, owner, self._now(), self._lease_seconds):
+        if not self._writer.claim(trade_date, owner, self._now(), self._lease_seconds,
+                                  analysis_version=self.analysis_version):
             return False
         executor = ThreadPoolExecutor(max_workers=self._workers, thread_name_prefix="close-ranking")
         pending = set()
@@ -54,14 +57,14 @@ class BuildDailyRankingsCommand:
             if not stocks or len({stock.secid for stock in stocks}) != len(stocks):
                 raise ValueError("证券清单不完整")
             identities = {stock.secid for stock in stocks}
-            items = {item.secid: item for item in self._reader.read_items(trade_date)
+            items = {item.secid: item for item in self._reader.read_items(trade_date, analysis_version=self.analysis_version)
                      if item.secid in identities and item.error is None}
             total = len(stocks)
 
             def progress():
                 failures = sum(item.error is not None for item in items.values())
                 return RankingProgress("running", trade_date, total, len(items), len(items) - failures,
-                                       failures, self._now())
+                                       failures, self._now(), analysis_version=self.analysis_version)
 
             self._writer.set_progress(progress(), owner)
             remaining = iter(stock for stock in stocks if stock.secid not in items)
@@ -95,7 +98,8 @@ class BuildDailyRankingsCommand:
             entries = [item.entry for item in items.values() if item.entry is not None and item.error is None]
             board = RankingBoard(self._now(), TimeFrame.ONE_DAY, rank_entries(entries, "bullish"),
                                  rank_entries(entries, "bearish"), trade_date, total, state.analyzed_count,
-                                 state.failed_count, "degraded" if state.failed_count else "ready")
+                                 state.failed_count, "degraded" if state.failed_count else "ready",
+                                 analysis_version=self.analysis_version)
             self._writer.publish(board, owner, self._now())
             return True
         except InterruptedError:

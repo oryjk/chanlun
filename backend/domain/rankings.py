@@ -2,6 +2,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 
 from .models import QuotePoint, RankingBoard, RankingEntry
+from .analysis_version import ANALYSIS_VERSION
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class RankingProgress:
     failed_count: int = 0
     updated_at: datetime | None = None
     error: str | None = None
+    analysis_version: int = ANALYSIS_VERSION
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,7 @@ def build_ranking_entry(stock, snapshot) -> RankingEntry | None:
         buy_point,
         sell_point,
         trend,
+        signal_quality=getattr(snapshot, "signal_quality", None),
     )
 
 
@@ -87,7 +90,7 @@ def _entry_sort_key(entry: RankingEntry, bias: str) -> tuple:
     aligned = point is not None and getattr(point, "side", None) == side
     price = getattr(point, "price", None)
     point_time = getattr(point, "time", None)
-    invalidation = entry.invalidation_price
+    invalidation = entry.signal_quality.invalidation_price if entry.signal_quality else None
     if aligned and isinstance(price, (int, float)) and price > 0 and isinstance(invalidation, (int, float)) and entry.latest > 0:
         direction = 1 if side == "buy" else -1
         move_percent = (entry.latest - price) / price * 100 * direction
@@ -119,8 +122,20 @@ def _entry_sort_key(entry: RankingEntry, bias: str) -> tuple:
 
 
 def rank_entries(entries, bias: str, limit: int | None = None) -> tuple[RankingEntry, ...]:
+    def classify(entry):
+        point, quality = entry.latest_point, entry.signal_quality
+        side = "buy" if bias == "bullish" else "sell"
+        reference = quality.invalidation_price if quality else None
+        unbroken = reference is not None and (
+            entry.latest >= reference if side == "buy" else entry.latest <= reference)
+        confirmed = (point is not None and getattr(point, "confirmed", False)
+                     and point.side == side and quality is not None
+                     and quality.state == "confirmed" and quality.history_status == "checked_from_pivot"
+                     and quality.first_reference_crossed_at is None and unbroken)
+        return replace(entry, signal_group="confirmed" if confirmed else "observation")
+
     selected = sorted(
-        (entry for entry in entries if entry.bias == bias),
-        key=lambda entry: _entry_sort_key(entry, bias),
+        (classify(entry) for entry in entries if entry.bias == bias),
+        key=lambda entry: (entry.signal_group != "confirmed", *_entry_sort_key(entry, bias)),
     )
     return tuple(replace(entry, rank=index) for index, entry in enumerate(selected[:limit], 1))

@@ -16,7 +16,8 @@ def evaluate_confluence(secid: str, levels: list[tuple[TimeFrame, ChanSignals]])
         confirmation = None
         if latest is not None and position + 1 < len(levels) and levels[position + 1][1].points:
             lower_latest = levels[position + 1][1].points[-1]
-            if lower_latest.side == latest.side and lower_latest.time >= latest.time:
+            if (latest.confirmed and lower_latest.confirmed
+                    and lower_latest.side == latest.side and lower_latest.time >= latest.time):
                 confirmation = lower_latest
         results.append(
             LevelSignal(

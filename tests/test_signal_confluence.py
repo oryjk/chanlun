@@ -29,6 +29,15 @@ def signals(*points):
 
 
 class ConfluenceTests(unittest.TestCase):
+    def test_candidate_on_either_level_is_not_a_confirmed_confluence(self):
+        from dataclasses import replace
+        for higher_confirmed, lower_confirmed in ((False, True), (True, False)):
+            result = evaluate_confluence('1.600519', [
+                (TimeFrame.ONE_DAY, signals(replace(point(1, 'buy', 0), confirmed=higher_confirmed))),
+                (TimeFrame.ONE_HOUR, signals(replace(point(2, 'buy', 3), confirmed=lower_confirmed))),
+            ])
+            self.assertIsNone(result.levels[0].lower_confirmation)
+
     def test_same_side_lower_point_after_higher_point_confirms(self):
         result = evaluate_confluence(
             "1.600519",

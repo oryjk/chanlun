@@ -52,7 +52,7 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers, decima
     const macdPoint = macd[candleParam.dataIndex]
     const pointRows = signals.points
       .filter((point) => point.candle_index === candleParam.dataIndex)
-      .map((point) => `<div class="tooltip-row"><span>${pointLabel(point)}${point.confirmed ? '' : '（候选）'}</span><b style="color:${point.side === 'buy' ? UP : DOWN}">${formatPrice(point.price, decimals)}</b></div>`)
+      .map((point) => `<div class="tooltip-row"><span>${pointLabel(point)}${point.confirmed ? '（结构已确认）' : '（候选）'}</span><b style="color:${point.side === 'buy' ? UP : DOWN}">${formatPrice(point.price, decimals)}</b></div><div class="tooltip-row"><span>结构端点</span><b>${fullTime(point.time)}</b></div><div class="tooltip-row"><span>首次识别 / 确认时间</span><b>未追溯</b></div>`)
       .join('')
     const rows = [
       ['开盘', formatPrice(candle.open, decimals)],

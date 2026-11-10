@@ -10,6 +10,15 @@ import {
 
 export const DEFAULT_RANKING_PAGE_SIZE = 10
 
+export function splitRankingGroups(entries = []) {
+  const confirmed = []
+  const observation = []
+  for (const entry of entries) {
+    (entry.signal_group === 'confirmed' ? confirmed : observation).push(entry)
+  }
+  return { confirmed, observation }
+}
+
 export function getRankingState(board) {
   const hasResult = Boolean(board?.generated_at)
   const updating = board?.state === 'preparing' || board?.state === 'running'
@@ -132,10 +141,15 @@ export function describeRankingEntry(entry) {
     latestPrice: entry.latest,
     invalidationPrice: entry.invalidation_price,
     latestPoint: entry.latest_point,
+    signalQuality: entry.signal_quality,
   })
-  const formattedInvalidation = entry.invalidation_price === null
+  const signalInvalidation = entry.signal_quality?.invalidation_price
+  const reference = Number.isFinite(signalInvalidation) ? signalInvalidation : entry.invalidation_price
+  const referenceBias = Number.isFinite(signalInvalidation) && entry.latest_point
+    ? (entry.latest_point.side === 'sell' ? 'bearish' : 'bullish') : entry.bias
+  const formattedInvalidation = reference == null
     ? '—'
-    : formatPrice(entry.invalidation_price, decimals)
+    : formatPrice(reference, decimals)
   return {
     decimals,
     isStar: isStarMarket(entry.stock),
@@ -143,9 +157,9 @@ export function describeRankingEntry(entry) {
     buyChange: buildPointChangeDetail(buyPoint, entry.latest, decimals),
     sellChange: buildPointChangeDetail(sellPoint, entry.latest, decimals),
     invalidationText: formatInvalidationDistance(
-      entry.bias,
+      referenceBias,
       entry.latest,
-      entry.invalidation_price,
+      reference,
       formattedInvalidation,
     ),
     chart: buildEntryTrendChart(entry, decimals),
@@ -162,6 +176,7 @@ export function filterRankingEntries(entries = [], query = '') {
       latestPrice: entry.latest,
       invalidationPrice: entry.invalidation_price,
       latestPoint: entry.latest_point,
+      signalQuality: entry.signal_quality,
     })
     const starLabel = isStarMarket(stock) ? '科创板' : ''
     const confirmLabel = entry.latest_point ? (entry.latest_point.confirmed ? '已确认' : '待确认') : ''

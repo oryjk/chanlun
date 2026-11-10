@@ -126,6 +126,29 @@ class BuySellPointResponse(ApiModel):
     price: float
     confirmed: bool
     reason: str
+    invalidation_price: float | None = None
+    source_zone_id: int | None = None
+
+
+class SignalQualityResponse(ApiModel):
+    state: str
+    invalidation_price: float | None
+    momentum_status: str
+    volume_status: str
+    macd_histogram: float | None
+    macd_area_ratio: float | None
+    pullback_macd_ratio: float | None
+    reference_touched: bool | None
+    breakout_volume_ratio: float | None
+    pullback_volume_ratio: float | None
+    history_status: str
+    first_detected_at: datetime | None
+    confirmed_at: datetime | None
+    reasons: tuple[str, ...]
+    bars_since_pivot: int | None = None
+    first_reference_crossed_at: datetime | None = None
+    first_reference_crossed_close: float | None = None
+    history_checked_through: datetime | None = None
 
 
 class ChanSignalsResponse(ApiModel):
@@ -206,6 +229,7 @@ class MarketSnapshotResponse(ApiModel):
     guidance: MarketGuidanceResponse
     macd: tuple[MacdPointResponse, ...]
     signals: ChanSignalsResponse
+    signal_quality: SignalQualityResponse | None = None
 
 
 class RankingEntryResponse(ApiModel):
@@ -220,6 +244,8 @@ class RankingEntryResponse(ApiModel):
     buy_point: BuySellPointResponse | None = None
     sell_point: BuySellPointResponse | None = None
     trend: tuple[QuotePointResponse, ...] = ()
+    signal_quality: SignalQualityResponse | None = None
+    signal_group: str = "observation"
 
 
 class RankingBoardResponse(ApiModel):
@@ -235,6 +261,7 @@ class RankingBoardResponse(ApiModel):
     progress_total: int = 0
     progress_processed: int = 0
     update_error: str | None = None
+    analysis_version: int
 
 
 class UserIdentityResponse(ApiModel):

@@ -4,9 +4,24 @@ from types import SimpleNamespace
 
 from backend.app.ranking_worker import RankingWorker
 from backend.domain.rankings import RankingProgress, RankingView
+from backend.domain.analysis_version import ANALYSIS_VERSION
 
 
 class WorkerTests(unittest.TestCase):
+    def test_current_day_old_version_is_rebuilt_but_current_version_is_not(self):
+        from backend.domain.models import RankingBoard, TimeFrame
+        runs = []
+        day = date(2026, 11, 9)
+        board = RankingBoard(datetime(2026, 11, 9, tzinfo=timezone.utc), TimeFrame.ONE_DAY,
+                             (), (), trade_date=day, total_count=1, analyzed_count=1)
+        for version in (1, 2, 3, ANALYSIS_VERSION):
+            from dataclasses import replace
+            worker = RankingWorker(SimpleNamespace(latest_on_or_before=lambda cutoff: day),
+                SimpleNamespace(analysis_version=ANALYSIS_VERSION, execute=lambda target, **kw: runs.append(target)),
+                SimpleNamespace(read=lambda: RankingView(replace(board, analysis_version=version), RankingProgress())))
+            worker.tick(datetime(2026, 11, 10, 2, tzinfo=timezone.utc))
+        self.assertEqual(runs, [day, day, day])
+
     def test_before_and_after_cutoff_use_only_closed_trading_dates(self):
         cutoffs, runs = [], []
         def day(cutoff):

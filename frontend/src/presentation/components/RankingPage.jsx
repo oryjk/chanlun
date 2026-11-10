@@ -5,9 +5,11 @@ import {
   describeRankingEntry,
   filterRankingEntries,
   getRankingState,
+  splitRankingGroups,
 } from '../../domain/rankings.js'
 import { useRankings } from '../hooks/useRankings.js'
 import DragonLoader from './DragonLoader.jsx'
+import SignalEvidence from './SignalEvidence.jsx'
 
 const updateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
@@ -42,6 +44,7 @@ function RankingTrendChart({ chart }) {
       className="ranking-trend-svg"
       aria-label="近期价格走势与买卖点"
     >
+      <title>图中日期为结构端点日期，不代表当日已经识别或确认信号</title>
       <path d={chart.areaPath} className="ranking-trend-area" />
       <polyline points={chart.polyline} className="ranking-trend-line" />
       <circle cx={chart.lastX} cy={chart.lastY} r="2.2" className="ranking-trend-last" />
@@ -89,7 +92,7 @@ function RankingTrendChart({ chart }) {
   )
 }
 
-function RankingList({ title, entries, direction, onSelect, hasResult, query }) {
+function RankingGroup({ title, entries, group, onSelect, hasResult, query }) {
   const [visibleCount, setVisibleCount] = useState(DEFAULT_RANKING_PAGE_SIZE)
 
   useEffect(() => {
@@ -100,9 +103,9 @@ function RankingList({ title, entries, direction, onSelect, hasResult, query }) 
   const remaining = Math.max(0, entries.length - visibleEntries.length)
 
   return (
-    <section className={`ranking-card ${direction}`}>
-      <div className="ranking-card-heading">
-        <h2>{title}</h2>
+    <div className={`ranking-group ${group}`} data-group={group}>
+      <div className="ranking-group-heading">
+        <h3>{title}</h3>
         <span>
           {entries.length > visibleEntries.length
             ? `已显示 ${visibleEntries.length} / ${entries.length} 只`
@@ -130,7 +133,7 @@ function RankingList({ title, entries, direction, onSelect, hasResult, query }) 
                   {info.buyChange && (
                     <span>
                       <span className="ranking-signal-date">
-                        <span>买点信号出现于</span>
+                        <span>买点结构端点</span>
                         <time dateTime={info.buyChange.date}>{info.buyChange.date}</time>
                       </span>
                       <i className={`point-confirm-tag ${info.buyChange.confirmed ? 'confirmed' : 'pending'}`}>
@@ -143,7 +146,7 @@ function RankingList({ title, entries, direction, onSelect, hasResult, query }) 
                   {info.sellChange && (
                     <span>
                       <span className="ranking-signal-date">
-                        <span>卖点信号出现于</span>
+                        <span>卖点结构端点</span>
                         <time dateTime={info.sellChange.date}>{info.sellChange.date}</time>
                       </span>
                       <i className={`point-confirm-tag ${info.sellChange.confirmed ? 'confirmed' : 'pending'}`}>
@@ -154,6 +157,7 @@ function RankingList({ title, entries, direction, onSelect, hasResult, query }) 
                     </span>
                   )}
                 </span>
+                <SignalEvidence quality={entry.signal_quality} decimals={info.decimals} compact />
               </span>
               <span className="ranking-trend">
                 <RankingTrendChart chart={info.chart} />
@@ -172,7 +176,9 @@ function RankingList({ title, entries, direction, onSelect, hasResult, query }) 
           <p className="ranking-empty">
             {query.trim()
               ? '当前榜单未匹配到该证券，请尝试其他关键词'
-              : hasResult ? '暂无可列入的结构' : '首次收盘榜单尚未生成'}
+              : hasResult
+                ? group === 'confirmed' ? '暂无满足条件的已确认结构，候选不会补入此组' : '暂无其他观察结构'
+                : '首次收盘榜单尚未生成'}
           </p>
         )}
       </div>
@@ -185,6 +191,20 @@ function RankingList({ title, entries, direction, onSelect, hasResult, query }) 
           展开更多（剩余 {remaining} 只）
         </button>
       )}
+    </div>
+  )
+}
+
+function RankingList({ title, entries, direction, ...props }) {
+  const groups = splitRankingGroups(entries)
+  return (
+    <section className={`ranking-card ${direction}`}>
+      <div className="ranking-card-heading">
+        <h2>{title}</h2>
+        <span>{entries.length} 只</span>
+      </div>
+      <RankingGroup title="已确认结构" group="confirmed" entries={groups.confirmed} {...props} />
+      <RankingGroup title="候选与观察" group="observation" entries={groups.observation} {...props} />
     </section>
   )
 }
@@ -244,7 +264,12 @@ export default function RankingPage({ getRankings, onSelectStock, reloadKey }) {
             : '收盘榜单准备中，请稍后查看'}
         {!initialLoading && state.updating && <p className="ranking-progress">后台正在更新，{state.progress}</p>}
         {board?.update_error && <p className="ranking-update-error">{board.update_error}{state.hasResult ? '，当前展示上次完成的结果' : ''}</p>}
-        {state.hasResult && <p className="ranking-date-hint">买卖点日期为信号出现日期，行情与涨跌幅截至上述收盘日。</p>}
+        {state.hasResult && <>
+          <p className="ranking-date-hint">行情与涨跌幅截至上述收盘日。已确认仅指结构确认，量价辅助规则尚未验证。</p>
+          <p className="ranking-date-hint">买卖点日期为结构端点日期。距端点的 K 线数不代表距确认时间；首次识别及确认时间尚未追溯。</p>
+          {(!board.analysis_version || board.analysis_version < 2) && <p className="ranking-update-error">当前为旧版快照，辅助证据尚未计算，暂列观察组，等待后台更新。</p>}
+          {board.analysis_version >= 2 && board.analysis_version < 4 && <p className="ranking-update-error">当前快照尚未核对端点起的历史收盘越界，暂列观察组，等待后台更新。</p>}
+        </>}
       </div>
       {initialLoading || buildingInitialBoard ? (
         <div className="ranking-loading-panel">
@@ -271,7 +296,7 @@ export default function RankingPage({ getRankings, onSelectStock, reloadKey }) {
         </>
       )}
       <div className="ranking-note">
-        <span>优先展示近期出现同向买卖点且距失效位较近的标的，中性结构不入榜。仅供结构研究，不构成买卖建议。</span>
+        <span>优先展示已确认且当前未失效的同向结构，候选与其他结构单列观察。已确认不等于应立即交易，仅供结构研究，不构成买卖建议。</span>
       </div>
     </section>
   )

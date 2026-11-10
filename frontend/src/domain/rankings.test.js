@@ -35,14 +35,14 @@ test('describeRankingEntry produces direct conclusion, buy/sell dates, relative 
     ],
   }
   const info = describeRankingEntry(entry)
-  expect(info.conclusion.label).toBe('可关注买入')
+  expect(info.conclusion.label).toBe('候选买点，等待确认')
   expect(info.buyChange.date).toBe('2026-11-03')
   expect(info.buyChange.statusLabel).toBe('待确认')
   expect(info.buyChange.formatted).toBe('+3.19%')
   expect(info.sellChange.date).toBe('2026-09-23')
   expect(info.sellChange.statusLabel).toBe('已确认')
   expect(info.sellChange.formatted).toBe('+4.31%')
-  expect(info.invalidationText).toBe('跌破 9.93 失效 (-4.1%)')
+  expect(info.invalidationText).toBe('收盘跌破 9.93 失效 (-4.1%)')
   expect(info.chart.buyMarker.text).toBe('买 10.04 (11-03)')
   expect(info.chart.sellMarker.text).toBe('卖 9.93 (09-23)')
 })
@@ -62,7 +62,7 @@ test('describeRankingEntry warns against chasing when price is far above buy poi
     trend: [],
   }
   const info = describeRankingEntry(entry)
-  expect(info.conclusion.label).toBe('已涨高，不宜追买')
+  expect(info.conclusion.label).toBe('候选买点，等待确认')
   expect(info.buyChange.formatted).toBe('+35.49%')
   expect(info.isStar).toBe(true)
   expect(buildEntryTrendChart(entry)).toBeNull()
@@ -95,7 +95,7 @@ test('filterRankingEntries matches symbol, name, STAR market tag, and conclusion
   expect(filterRankingEntries(entries, '688')).toHaveLength(1)
   expect(filterRankingEntries(entries, '科创')).toHaveLength(1)
   expect(filterRankingEntries(entries, '华测')).toHaveLength(1)
-  expect(filterRankingEntries(entries, '可关注')).toHaveLength(2)
+  expect(filterRankingEntries(entries, '候选')).toHaveLength(2)
 })
 
 test('describeRankingEntry explains breakout waiting for pullback when bullish entry already reclaimed old sell point', () => {
@@ -115,4 +115,13 @@ test('describeRankingEntry explains breakout waiting for pullback when bullish e
   const info = describeRankingEntry(entry)
   expect(info.conclusion.label).toBe('刚突破中枢，等回踩买点')
   expect(info.conclusion.tone).toBe('neutral')
+})
+
+test('a sell signal reference in the bullish observation list invalidates upward, not downward', () => {
+  const info = describeRankingEntry({
+    stock: { symbol: '600001', market: '沪A' }, bias: 'bullish', latest: 10,
+    invalidation_price: 9, latest_point: { kind: 3, side: 'sell', price: 10.2, confirmed: true },
+    signal_quality: { state: 'confirmed', invalidation_price: 10.5 },
+  })
+  expect(info.invalidationText).toBe('收盘突破 10.50 失效 (+5.0%)')
 })

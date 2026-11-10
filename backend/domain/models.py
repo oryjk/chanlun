@@ -6,6 +6,7 @@ from datetime import date, datetime
 from enum import Enum
 
 from .errors import InvalidSecurityId, InvalidTimeframe
+from .analysis_version import ANALYSIS_VERSION
 
 
 class TimeFrame(str, Enum):
@@ -217,6 +218,30 @@ class BuySellPoint:
     price: float
     confirmed: bool
     reason: str
+    invalidation_price: float | None = None
+    source_zone_id: int | None = None
+
+
+@dataclass(frozen=True)
+class SignalQuality:
+    state: str
+    invalidation_price: float | None
+    momentum_status: str = "insufficient"
+    volume_status: str = "insufficient"
+    macd_histogram: float | None = None
+    macd_area_ratio: float | None = None
+    pullback_macd_ratio: float | None = None
+    reference_touched: bool | None = None
+    breakout_volume_ratio: float | None = None
+    pullback_volume_ratio: float | None = None
+    history_status: str = "unknown"
+    first_detected_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    reasons: tuple[str, ...] = ()
+    bars_since_pivot: int | None = None
+    first_reference_crossed_at: datetime | None = None
+    first_reference_crossed_close: float | None = None
+    history_checked_through: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -253,6 +278,7 @@ class MarketSnapshot:
     guidance: MarketGuidance
     macd: tuple[MacdPoint, ...]
     signals: ChanSignals
+    signal_quality: SignalQuality | None = None
 
 
 @dataclass(frozen=True)
@@ -268,6 +294,8 @@ class RankingEntry:
     buy_point: BuySellPoint | None = None
     sell_point: BuySellPoint | None = None
     trend: tuple[QuotePoint, ...] = ()
+    signal_quality: SignalQuality | None = None
+    signal_group: str = "observation"
 
 
 @dataclass(frozen=True)
@@ -284,6 +312,7 @@ class RankingBoard:
     progress_total: int = 0
     progress_processed: int = 0
     update_error: str | None = None
+    analysis_version: int = ANALYSIS_VERSION
 
 
 @dataclass(frozen=True)

@@ -133,16 +133,16 @@ class RankingTests(unittest.TestCase):
         self.assertEqual([entry.rank for entry in bullish], [1, 2])
         self.assertEqual([entry.stock.secid for entry in rank_entries(entries, "bearish", 6)], ["1.600002"])
 
-    def test_actionable_recent_point_ranks_ahead_of_overextended_old_point(self):
+    def test_recent_candidate_with_own_reference_ranks_before_overextended_candidates(self):
         from datetime import datetime, timezone
-        from backend.domain.models import BuySellPoint, Candle
+        from backend.domain.models import BuySellPoint, Candle, SignalQuality
         from backend.domain.rankings import build_ranking_entry
 
         stocks = [
             Stock("1.688220", "688220", "已追高", "沪A"),
             Stock("1.688410", "688410", "刚买点", "沪A"),
         ]
-        chased_point = BuySellPoint(1, "buy", 1, 0, datetime(2026, 9, 10, tzinfo=timezone.utc), 80.0, True, "一买")
+        chased_point = BuySellPoint(1, "buy", 1, 0, datetime(2026, 9, 10, tzinfo=timezone.utc), 80.0, False, "一买")
         fresh_point = BuySellPoint(3, "buy", 2, 1, datetime(2026, 11, 3, tzinfo=timezone.utc), 10.0, False, "三买")
         prior_sell = BuySellPoint(3, "sell", 1, 0, datetime(2026, 9, 23, tzinfo=timezone.utc), 9.9, True, "三卖")
         candles = (
@@ -150,7 +150,8 @@ class RankingTests(unittest.TestCase):
             Candle(datetime(2026, 11, 3, tzinfo=timezone.utc), 10.1, 10.2, 10.3, 10.0, 100),
             Candle(datetime(2026, 11, 4, tzinfo=timezone.utc), 10.2, 10.36, 10.4, 10.1, 100),
         )
-        chased = RankingEntry(0, stocks[0], "bullish", 4, 109.75, 16.93, 92.8, chased_point, buy_point=chased_point)
+        chased = RankingEntry(0, stocks[0], "bullish", 4, 109.75, 16.93, 92.8, chased_point,
+                              buy_point=chased_point, signal_quality=SignalQuality('candidate', 92.8))
         fresh = build_ranking_entry(
             stocks[1],
             SimpleNamespace(
@@ -158,6 +159,7 @@ class RankingTests(unittest.TestCase):
                 summary=SimpleNamespace(latest=10.36, change_percent=2.07),
                 signals=SimpleNamespace(points=(prior_sell, fresh_point)),
                 candles=candles,
+                signal_quality=SignalQuality('candidate', 9.93),
             ),
         )
         ranked = rank_entries([chased, fresh], "bullish", 6)
@@ -174,7 +176,8 @@ class RankingTests(unittest.TestCase):
             1.048,
             -1.0,
             1.010,
-            BuySellPoint(2, "buy", 1, 0, datetime(2026, 10, 26, tzinfo=timezone.utc), 1.015, True, "二买"),
+            BuySellPoint(2, "buy", 1, 0, datetime(2026, 10, 26, tzinfo=timezone.utc), 1.015, False, "二买"),
+            signal_quality=SignalQuality('candidate', 1.010),
         )
         strength4_unaligned = RankingEntry(
             0,

@@ -89,6 +89,8 @@ class ChanSignalTests(unittest.TestCase):
         self.assertEqual((divergence.kind, divergence.direction), ("trend", "bottom"))
         self.assertEqual((divergence.entering_area, divergence.leaving_area), (5, 2))
         self.assertIn((1, "buy", 85), summarize(signals.points))
+        first = next(point for point in signals.points if point.kind == 1)
+        self.assertEqual(first.invalidation_price, 85)
 
     def test_stronger_new_low_is_not_divergence(self):
         histograms = [0, 0, 0, 0, -2, -3, 0, 0, -4, -4]
@@ -105,6 +107,8 @@ class ChanSignalTests(unittest.TestCase):
         points = summarize(signals.points)
         self.assertIn((1, "buy", 85), points)
         self.assertIn((2, "buy", 87), points)
+        second = next(point for point in signals.points if point.kind == 2)
+        self.assertEqual(second.invalidation_price, 85)
 
     def test_lower_pullback_after_first_buy_gives_no_second_buy(self):
         prices = DOWN_TREND + [91, 84]
@@ -118,6 +122,9 @@ class ChanSignalTests(unittest.TestCase):
 
         # 中枢一之后反弹至 96，未回到核心下沿 104
         self.assertIn((3, "sell", 96), summarize(signals.points))
+        third = next(point for point in signals.points if point.kind == 3)
+        self.assertEqual(third.invalidation_price, 104)
+        self.assertEqual(third.source_zone_id, 1)
 
     def test_mirrored_up_trend_gives_first_sell_and_third_buy(self):
         histograms = [0, 0, 0, 0, 2, 3, 0, 0, 1, 1]

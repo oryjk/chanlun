@@ -258,6 +258,7 @@ function App({ useCases }) {
                 latestPrice: summary?.latest,
                 invalidationPrice: snapshot.guidance.invalidation_price,
                 latestPoint,
+                signalQuality: snapshot.signal_quality,
               })
               const buyChange = getPriceChangeFromPoint(buyPoint, summary?.latest)
               const sellChange = getPriceChangeFromPoint(sellPoint, summary?.latest)
@@ -275,23 +276,23 @@ function App({ useCases }) {
                       {buyChange && (
                         <p>
                           <span>
-                            最近{pointLabel(buyPoint)} {buyChange.date} ({price(buyPoint.price)})
+                            最近{pointLabel(buyPoint)}，结构端点 {buyChange.date} ({price(buyPoint.price)})
                             <i className={`point-confirm-tag ${buyChange.confirmed ? 'confirmed' : 'pending'}`}>
                               {buyChange.statusLabel}
                             </i>
                           </span>
-                          <b>现价较该日 <em className={buyChange.percent >= 0 ? 'up' : 'down'}>{buyChange.formatted}</em></b>
+                          <b>现价较端点价 <em className={buyChange.percent >= 0 ? 'up' : 'down'}>{buyChange.formatted}</em></b>
                         </p>
                       )}
                       {sellChange && (
                         <p>
                           <span>
-                            最近{pointLabel(sellPoint)} {sellChange.date} ({price(sellPoint.price)})
+                            最近{pointLabel(sellPoint)}，结构端点 {sellChange.date} ({price(sellPoint.price)})
                             <i className={`point-confirm-tag ${sellChange.confirmed ? 'confirmed' : 'pending'}`}>
                               {sellChange.statusLabel}
                             </i>
                           </span>
-                          <b>现价较该日 <em className={sellChange.percent >= 0 ? 'up' : 'down'}>{sellChange.formatted}</em></b>
+                          <b>现价较端点价 <em className={sellChange.percent >= 0 ? 'up' : 'down'}>{sellChange.formatted}</em></b>
                         </p>
                       )}
                     </div>
@@ -301,7 +302,7 @@ function App({ useCases }) {
                   </ul>
                   {Number.isFinite(snapshot.guidance.invalidation_price) && (
                     <p className="guidance-invalidation">
-                      <span>失效参考价<TermInfo {...GLOSSARY.invalidation} /></span>
+                      <span>中枢方向失效参考<TermInfo {...GLOSSARY.invalidation} /></span>
                       <b>
                         {formatInvalidationDistance(
                           snapshot.guidance.bias,
@@ -320,6 +321,7 @@ function App({ useCases }) {
             {snapshot && (
               <SignalPanel
                 signals={snapshot.signals}
+                quality={snapshot.signal_quality}
                 timeframe={snapshot.timeframe}
                 timeframeLabel={snapshot.timeframe_label}
                 latestPrice={summary?.latest}

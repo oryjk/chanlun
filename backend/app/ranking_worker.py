@@ -22,8 +22,12 @@ class RankingWorker:
         if view.progress.state == "error" and view.progress.updated_at and now - view.progress.updated_at < timedelta(minutes=15):
             return
         trade_date = self._calendar.latest_on_or_before(cutoff)
-        if view.board and view.board.trade_date and view.board.trade_date >= trade_date:
-            return
+        if view.board and view.board.trade_date:
+            if view.board.trade_date > trade_date:
+                return
+            if (view.board.trade_date == trade_date
+                    and view.board.analysis_version >= self._command.analysis_version):
+                return
         self._command.execute(trade_date, cancelled=self._stop.is_set)
 
     def _run(self):

@@ -14,6 +14,7 @@ from ..application.queries.services import QueryServices
 from ..domain.services.chan_analyzer import ChanAnalyzer
 from ..domain.services.chan_signals import ChanSignalAnalyzer
 from ..domain.services.structure_guidance import StructureGuidanceEvaluator
+from ..domain.services.signal_quality import SignalQualityEvaluator
 from ..infrastructure.auth.registration_gateway import RegistrationSystemGateway
 from ..infrastructure.auth.signed_session_codec import SignedSessionCodec
 from ..infrastructure.cache.market_data_cache import CachedMarketDataReader
@@ -51,6 +52,7 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
         ChanAnalyzer(),
         StructureGuidanceEvaluator(),
         ChanSignalAnalyzer(),
+        SignalQualityEvaluator(),
     )
     ranking_store = SqliteRankingStore(settings.ranking_store_path)
     stock_universe = FallbackStockUniverseReader(EastmoneyStockPoolReader(http_client), SinaStockPoolReader(http_client))
