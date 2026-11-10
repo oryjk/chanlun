@@ -9,10 +9,18 @@ import {
 import { useRankings } from '../hooks/useRankings.js'
 import DragonLoader from './DragonLoader.jsx'
 
-function formatTime(value) {
-  const date = new Date(value)
-  const pad = (number) => String(number).padStart(2, '0')
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+const updateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+function formatUpdateTime(value) {
+  return updateTimeFormatter.format(new Date(value)).replace(/\//g, '-')
 }
 
 function SearchIcon() {
@@ -121,21 +129,27 @@ function RankingList({ title, entries, direction, onSelect, hasResult, query }) 
                 <span className="ranking-point-changes">
                   {info.buyChange && (
                     <span>
-                      买点 {info.buyChange.date}
+                      <span className="ranking-signal-date">
+                        <span>买点信号出现于</span>
+                        <time dateTime={info.buyChange.date}>{info.buyChange.date}</time>
+                      </span>
                       <i className={`point-confirm-tag ${info.buyChange.confirmed ? 'confirmed' : 'pending'}`}>
                         {info.buyChange.statusLabel}
                       </i>{' '}
-                      较该日{' '}
+                      较信号价{' '}
                       <b className={info.buyChange.percent >= 0 ? 'up' : 'down'}>{info.buyChange.formatted}</b>
                     </span>
                   )}
                   {info.sellChange && (
                     <span>
-                      卖点 {info.sellChange.date}
+                      <span className="ranking-signal-date">
+                        <span>卖点信号出现于</span>
+                        <time dateTime={info.sellChange.date}>{info.sellChange.date}</time>
+                      </span>
                       <i className={`point-confirm-tag ${info.sellChange.confirmed ? 'confirmed' : 'pending'}`}>
                         {info.sellChange.statusLabel}
                       </i>{' '}
-                      较该日{' '}
+                      较信号价{' '}
                       <b className={info.sellChange.percent >= 0 ? 'up' : 'down'}>{info.sellChange.formatted}</b>
                     </span>
                   )}
@@ -210,15 +224,28 @@ export default function RankingPage({ getRankings, onSelectStock, reloadKey }) {
         </div>
       </div>
       {error && <div className="error-banner" role="alert">{error}</div>}
-      <p className="ranking-status" role="status">
+      <div className="ranking-status" role="status">
         {initialLoading
           ? '正在读取全市场收盘结构榜单…'
           : state.hasResult
-            ? <><time dateTime={board.trade_date}>{board.trade_date} 收盘</time>　{state.coverage}</>
+            ? <>
+                <div className="ranking-dates">
+                  <p className="ranking-close-date">
+                    <span>榜单收盘日期</span>
+                    <time dateTime={board.trade_date}>{board.trade_date}</time>
+                  </p>
+                  <p className="ranking-update-time">
+                    <span>榜单更新时间（北京时间）</span>
+                    <time dateTime={board.generated_at}>{formatUpdateTime(board.generated_at)}</time>
+                  </p>
+                </div>
+                <p className="ranking-coverage">{state.coverage}</p>
+              </>
             : '收盘榜单准备中，请稍后查看'}
-        {!initialLoading && state.updating && <>，后台正在更新，{state.progress}</>}
-        {board?.update_error && <>。{board.update_error}{state.hasResult ? '，当前展示上次完成的结果' : ''}</>}
-      </p>
+        {!initialLoading && state.updating && <p className="ranking-progress">后台正在更新，{state.progress}</p>}
+        {board?.update_error && <p className="ranking-update-error">{board.update_error}{state.hasResult ? '，当前展示上次完成的结果' : ''}</p>}
+        {state.hasResult && <p className="ranking-date-hint">买卖点日期为信号出现日期，行情与涨跌幅截至上述收盘日。</p>}
+      </div>
       {initialLoading || buildingInitialBoard ? (
         <div className="ranking-loading-panel">
           <DragonLoader
@@ -245,7 +272,6 @@ export default function RankingPage({ getRankings, onSelectStock, reloadKey }) {
       )}
       <div className="ranking-note">
         <span>优先展示近期出现同向买卖点且距失效位较近的标的，中性结构不入榜。仅供结构研究，不构成买卖建议。</span>
-        {state.hasResult && <time dateTime={board.generated_at}>生成于 {formatTime(board.generated_at)}</time>}
       </div>
     </section>
   )
