@@ -1,8 +1,11 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from backend.domain.models import Candle, Fractal, Pen
+from backend.application.queries.get_market_snapshot import GetMarketSnapshotQuery
+from backend.domain.models import Candle, Fractal, Instrument, MarketData, Pen
 from backend.domain.services.chan_analyzer import ChanAnalyzer
+from backend.domain.services.chan_signals import ChanSignalAnalyzer
+from backend.domain.services.structure_guidance import StructureGuidanceEvaluator
 
 
 START = datetime(2024, 1, 1, tzinfo=timezone.utc)
@@ -186,6 +189,33 @@ class SegmentTests(unittest.TestCase):
         )
 
         self.assertFalse(any(segment.confirmed for segment in segments))
+
+
+class SnapshotSummaryTests(unittest.TestCase):
+    def test_intraday_snapshot_uses_previous_trading_day_close_for_daily_change(self):
+        candles = (
+            Candle(datetime(2026, 11, 4, 14, 30, tzinfo=timezone.utc), 99.0, 99.5, 100.0, 98.5, 100),
+            Candle(datetime(2026, 11, 4, 15, 0, tzinfo=timezone.utc), 99.5, 100.0, 100.5, 99.0, 100),
+            Candle(datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc), 100.0, 102.0, 102.5, 99.8, 100),
+            Candle(datetime(2026, 11, 5, 10, 30, tzinfo=timezone.utc), 102.0, 105.0, 105.5, 101.8, 100),
+        )
+        instrument = Instrument("1.600519", "600519", "贵州茅台", 2, "test")
+
+        class StubMarketReader:
+            def read(self, secid, timeframe, force_refresh=False):
+                return MarketData(instrument=instrument, candles=candles)
+
+        query = GetMarketSnapshotQuery(
+            StubMarketReader(),
+            ChanAnalyzer(),
+            StructureGuidanceEvaluator(),
+            ChanSignalAnalyzer(),
+        )
+        snapshot = query.execute("1.600519", "30m")
+
+        self.assertEqual(snapshot.summary.latest, 105.0)
+        self.assertEqual(snapshot.summary.change, 5.0)
+        self.assertEqual(snapshot.summary.change_percent, 5.0)
 
 
 if __name__ == "__main__":

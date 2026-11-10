@@ -29,6 +29,31 @@ export function formatPrice(value, decimals = PRICE_DECIMALS) {
   return Number(value).toFixed(decimals)
 }
 
+export function getCandleChange(candles, index, decimals = PRICE_DECIMALS) {
+  const candle = candles?.[index]
+  if (!candle || !Number.isFinite(candle.close)) {
+    return null
+  }
+  const previous = index > 0 ? candles[index - 1] : null
+  const basePrice = Number.isFinite(previous?.close) && previous.close > 0 ? previous.close : candle.open
+  if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    return null
+  }
+  const rawChange = candle.close - basePrice
+  const change = Math.abs(rawChange) < 1e-9 ? 0 : Number(rawChange.toFixed(4))
+  const rawPercent = (rawChange / basePrice) * 100
+  const changePercent = Math.abs(rawPercent) < 1e-9 ? 0 : Number(rawPercent.toFixed(2))
+  const direction = change >= 0 ? 'up' : 'down'
+  const sign = change >= 0 ? '+' : ''
+  return {
+    change,
+    changePercent,
+    direction,
+    formattedChange: `${sign}${formatPrice(change, decimals)}`,
+    formattedPercent: `${sign}${changePercent.toFixed(2)}%`,
+  }
+}
+
 export function isStarMarket(stock) {
   const symbol = String(stock?.symbol || '')
   const secid = String(stock?.secid || '')

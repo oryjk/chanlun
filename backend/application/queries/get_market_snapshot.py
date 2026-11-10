@@ -40,12 +40,12 @@ class GetMarketSnapshotQuery:
     def _build_snapshot(self, market_data: MarketData, timeframe: TimeFrame) -> MarketSnapshot:
         candles = market_data.candles
         latest = candles[-1]
-        previous = candles[-2]
-        change = latest.close - previous.close
+        previous_close = self._find_previous_close(candles)
+        change = latest.close - previous_close
         summary = MarketSummary(
             latest=latest.close,
             change=round(change, 4),
-            change_percent=round(change / previous.close * 100, 2),
+            change_percent=round(change / previous_close * 100, 2) if previous_close else 0.0,
             high=max(candle.high for candle in candles),
             low=min(candle.low for candle in candles),
             volume=sum(candle.volume for candle in candles[-20:]),
@@ -68,3 +68,11 @@ class GetMarketSnapshotQuery:
                 candles, analysis, macd, signals, timeframe=timeframe, as_of=datetime.now(timezone.utc)
             ) if self._quality_evaluator else None,
         )
+
+    @staticmethod
+    def _find_previous_close(candles: tuple) -> float:
+        latest_date = candles[-1].time.date()
+        for candle in reversed(candles[:-1]):
+            if candle.time.date() < latest_date:
+                return candle.close
+        return candles[-2].close

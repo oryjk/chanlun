@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
 import { pointLabel, pointShortLabel } from '../../domain/signals.js'
-import { formatPrice } from '../../domain/market.js'
+import { formatPrice, getCandleChange } from '../../domain/market.js'
 
 const UP = '#d94f5e'
 const DOWN = '#15936e'
@@ -47,8 +47,10 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers, decima
     const candleParam = params.find((item) => item.seriesName === 'K线')
     if (!candleParam) return ''
     const candle = candles[candleParam.dataIndex]
-    const rising = candle.close >= candle.open
-    const color = rising ? UP : DOWN
+    const changeInfo = getCandleChange(candles, candleParam.dataIndex, decimals)
+    const changeColor = changeInfo
+      ? (changeInfo.direction === 'up' ? UP : DOWN)
+      : (candle.close >= candle.open ? UP : DOWN)
     const macdPoint = macd[candleParam.dataIndex]
     const pointRows = signals.points
       .filter((point) => point.candle_index === candleParam.dataIndex)
@@ -58,11 +60,15 @@ function buildOption(candles, analysis, macd, signals, timeframe, layers, decima
       ['开盘', formatPrice(candle.open, decimals)],
       ['最高', formatPrice(candle.high, decimals)],
       ['最低', formatPrice(candle.low, decimals)],
-      ['收盘', formatPrice(candle.close, decimals)],
+      ['收盘', formatPrice(candle.close, decimals), changeColor],
+      ...(changeInfo ? [
+        ['涨跌额', changeInfo.formattedChange, changeColor],
+        ['涨跌幅', changeInfo.formattedPercent, changeColor],
+      ] : []),
       ['成交量', compactVolume(candle.volume)],
       ...(macdPoint ? [['MACD', macdPoint.histogram.toFixed(3)]] : []),
     ]
-    return `<div class="chart-tooltip"><div class="tooltip-time">${fullTime(candle.time)}</div>${rows.map(([label, value]) => `<div class="tooltip-row"><span>${label}</span><b style="color:${label === '收盘' ? color : '#1a1d21'}">${value}</b></div>`).join('')}${pointRows}</div>`
+    return `<div class="chart-tooltip"><div class="tooltip-time">${fullTime(candle.time)}</div>${rows.map(([label, value, rowColor]) => `<div class="tooltip-row"><span>${label}</span><b style="color:${rowColor || '#1a1d21'}">${value}</b></div>`).join('')}${pointRows}</div>`
   }
 
   return {
