@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from ..application.commands.login_with_webview_code import LoginWithWebviewCodeCommand
 from ..application.commands.record_quote_sample import RecordQuoteSampleCommand
 from ..application.commands.services import CommandServices
@@ -37,7 +39,14 @@ from .ranking_worker import RankingWorker
 from .settings import Settings
 
 
-def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
+@dataclass(frozen=True)
+class Application:
+    queries: QueryServices
+    commands: CommandServices
+    ranking_worker: RankingWorker | None
+
+
+def build_application(settings: Settings) -> Application:
     http_client = JsonHttpClient()
     stock_search = EastmoneyStockSearchReader(http_client)
     market_data = CachedMarketDataReader(
@@ -59,6 +68,15 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
     snapshot_query = GetMarketSnapshotQuery(market_data, pipeline, clock)
     ranking_store = SqliteRankingStore(settings.ranking_store_path)
     stock_universe = FallbackStockUniverseReader(EastmoneyStockPoolReader(http_client), SinaStockPoolReader(http_client))
+    build_daily_rankings = BuildDailyRankingsCommand(
+        stock_universe,
+        market_data,
+        pipeline,
+        ranking_store,
+        ranking_store,
+        clock,
+        workers=settings.ranking_workers,
+    )
     queries = QueryServices(
         search_stocks=SearchStocksQuery(stock_search),
         get_market_snapshot=snapshot_query,
@@ -72,21 +90,16 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
     commands = CommandServices(
         record_quote_sample=RecordQuoteSampleCommand(quote_store),
         login_with_webview_code=LoginWithWebviewCodeCommand(registration, session_codec),
-        build_daily_rankings=BuildDailyRankingsCommand(
-            stock_universe,
-            market_data,
-            pipeline,
-            ranking_store,
-            ranking_store,
-            clock,
-            workers=settings.ranking_workers,
-        ),
+        build_daily_rankings=build_daily_rankings,
     )
-    return queries, commands
-
-
-def build_ranking_worker(settings, commands):
-    store = SqliteRankingStore(settings.ranking_store_path)
-    data = CachedMarketDataReader(FallbackMarketDataReader(EastmoneyMarketDataReader(JsonHttpClient()),
-                                                         SinaMarketDataReader(JsonHttpClient())))
-    return RankingWorker(IndexClosedTradingDayReader(data), commands.build_daily_rankings, store, settings.ranking_run_at)
+    ranking_worker = (
+        RankingWorker(
+            IndexClosedTradingDayReader(market_data),
+            build_daily_rankings,
+            ranking_store,
+            settings.ranking_run_at,
+        )
+        if settings.ranking_enabled
+        else None
+    )
+    return Application(queries=queries, commands=commands, ranking_worker=ranking_worker)
