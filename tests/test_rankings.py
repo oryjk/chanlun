@@ -34,9 +34,8 @@ class FixedClock:
         return self.value
 
 
-class StubSnapshotQuery:
-    def __init__(self, results):
-        self.results = results
+class MarketDataStub:
+    def __init__(self):
         self.calls = []
         self.lock = Lock()
 
@@ -100,12 +99,8 @@ class RankingTests(unittest.TestCase):
             for index in range(1, 11)
             for prefix, market in (("600", 1), ("000", 0), ("510", 1), ("159", 0))
         ]
-        guidance = SimpleNamespace(bias="bullish", strength=3, invalidation_price=9)
-        results = {
-            f"{item['f13']}.{item['f12']}": (guidance, SimpleNamespace(latest=10, change_percent=1))
-            for item in items
-        }
-        snapshots = StubSnapshotQuery(results)
+        expected_secids = [f"{item['f13']}.{item['f12']}" for item in items]
+        market_data = MarketDataStub()
 
         with tempfile.TemporaryDirectory() as directory:
             store = SqliteRankingStore(Path(directory) / "rankings.db")
@@ -117,16 +112,18 @@ class RankingTests(unittest.TestCase):
             )
             BuildDailyRankingsCommand(
                 EastmoneyStockPoolReader(StubHttpClient(items)),
-                snapshots,
+                market_data,
                 pipeline,
+                store,
+                store,
                 store,
                 store,
                 FixedClock(datetime(2026, 11, 3, 8, tzinfo=timezone.utc)),
             ).execute(date(2026, 11, 3))
             board = store.read().board
 
-        self.assertEqual(len(snapshots.calls), 40)
-        self.assertCountEqual(snapshots.calls, [(secid, "1d") for secid in results])
+        self.assertEqual(len(market_data.calls), 40)
+        self.assertCountEqual(market_data.calls, [(secid, "1d") for secid in expected_secids])
         self.assertEqual(len(board.bullish), 40)
 
     def test_stock_pool_null_data_is_not_found(self):

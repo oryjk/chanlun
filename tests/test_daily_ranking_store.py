@@ -3,8 +3,8 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from backend.application.ranking_jobs import RankingProgress
 from backend.domain.models import RankingBoard, TimeFrame
-from backend.domain.rankings import RankingProgress
 from backend.infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
 from backend.domain.analysis_version import ANALYSIS_VERSION, LEGACY_ANALYSIS_VERSION
 
@@ -72,8 +72,8 @@ class RankingStoreTests(unittest.TestCase):
         self.assertFalse(self.store.claim(DAY, 'downgrade', NOW, 60, analysis_version=LEGACY_ANALYSIS_VERSION))
 
     def test_checkpoint_quality_roundtrip_and_version_isolation(self):
+        from backend.application.ranking_jobs import RankingItem, RankingProgress
         from backend.domain.models import BuySellPoint, RankingEntry, SignalQuality, Stock
-        from backend.domain.rankings import RankingItem, RankingProgress
         self.assertTrue(self.store.claim(DAY, 'new', NOW, 60, analysis_version=ANALYSIS_VERSION))
         point = BuySellPoint(3, 'buy', 2, 30, NOW, 10, True, 'test', invalidation_price=9)
         entry = RankingEntry(0, Stock('1.600001', '600001', 'test', '沪A'), 'bullish', 3,

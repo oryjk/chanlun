@@ -2,15 +2,11 @@ from datetime import date
 from typing import Callable, Protocol
 
 from ...domain.models import MarketData, QuoteSeries, RealtimeQuote, Stock, TimeFrame
-from ...domain.rankings import RankingItem, RankingView
+from ..ranking_jobs import RankingItem, RankingView
 
 
 class StockSearchReader(Protocol):
     def search(self, query: str) -> list[Stock]: ...
-
-
-class StockPoolReader(Protocol):
-    def list_liquid(self, limit: int) -> list[Stock]: ...
 
 
 class StockUniverseReader(Protocol):

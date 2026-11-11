@@ -74,6 +74,8 @@ def build_application(settings: Settings) -> Application:
         pipeline,
         ranking_store,
         ranking_store,
+        ranking_store,
+        ranking_store,
         clock,
         workers=settings.ranking_workers,
     )

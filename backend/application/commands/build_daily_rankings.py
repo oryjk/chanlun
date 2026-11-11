@@ -5,11 +5,12 @@ from uuid import uuid4
 from ...domain.analysis_version import ANALYSIS_VERSION
 from ...domain.errors import ChanlunError
 from ...domain.models import RankingBoard, TimeFrame
-from ...domain.rankings import RankingItem, RankingProgress, build_ranking_entry, rank_entries
+from ...domain.rankings import build_ranking_entry, rank_entries
 from ...domain.services.market_analysis import MarketAnalysisPipeline, close_window
 from ..ports.clock import Clock
 from ..ports.readers import MarketDataReader, RankingReader, StockUniverseReader
-from ..ports.writers import RankingWriter
+from ..ports.writers import RankingCheckpointWriter, RankingLease, RankingPublisher
+from ..ranking_jobs import RankingItem, RankingProgress
 
 
 class BuildDailyRankingsCommand:
@@ -21,7 +22,9 @@ class BuildDailyRankingsCommand:
         market_data: MarketDataReader,
         pipeline: MarketAnalysisPipeline,
         reader: RankingReader,
-        writer: RankingWriter,
+        lease: RankingLease,
+        checkpoints: RankingCheckpointWriter,
+        publisher: RankingPublisher,
         clock: Clock,
         *,
         workers=4,
@@ -32,14 +35,16 @@ class BuildDailyRankingsCommand:
         self._market_data = market_data
         self._pipeline = pipeline
         self._reader = reader
-        self._writer = writer
+        self._lease = lease
+        self._checkpoints = checkpoints
+        self._publisher = publisher
         self._clock = clock
         self._workers = workers
         self._retries = retries
         self._lease_seconds = lease_seconds
 
     def report_unavailable(self):
-        self._writer.note_error("暂时无法确认收盘数据，后台将稍后重试", self._clock.now())
+        self._checkpoints.note_error("暂时无法确认收盘数据，后台将稍后重试", self._clock.now())
 
     def _analyze(self, stock, trade_date, cancelled):
         for attempt in range(self._retries + 1):
@@ -63,8 +68,8 @@ class BuildDailyRankingsCommand:
         if cancelled():
             return False
         owner = uuid4().hex
-        if not self._writer.claim(trade_date, owner, self._clock.now(), self._lease_seconds,
-                                  analysis_version=self.analysis_version):
+        if not self._lease.claim(trade_date, owner, self._clock.now(), self._lease_seconds,
+                                 analysis_version=self.analysis_version):
             return False
         executor = ThreadPoolExecutor(max_workers=self._workers, thread_name_prefix="close-ranking")
         pending = set()
@@ -73,7 +78,7 @@ class BuildDailyRankingsCommand:
             while not listing.done():
                 if cancelled():
                     raise InterruptedError
-                if not self._writer.heartbeat(owner, self._clock.now(), self._lease_seconds):
+                if not self._lease.heartbeat(owner, self._clock.now(), self._lease_seconds):
                     raise RuntimeError("榜单任务租约已失效")
                 wait((listing,), timeout=5)
             stocks = listing.result()
@@ -89,7 +94,7 @@ class BuildDailyRankingsCommand:
                 return RankingProgress("running", trade_date, total, len(items), len(items) - failures,
                                        failures, self._clock.now(), analysis_version=self.analysis_version)
 
-            self._writer.set_progress(progress(), owner)
+            self._checkpoints.set_progress(progress(), owner)
             remaining = iter(stock for stock in stocks if stock.secid not in items)
 
             def fill():
@@ -104,14 +109,14 @@ class BuildDailyRankingsCommand:
                 if cancelled():
                     raise InterruptedError
                 done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
-                if not self._writer.heartbeat(owner, self._clock.now(), self._lease_seconds):
+                if not self._lease.heartbeat(owner, self._clock.now(), self._lease_seconds):
                     raise RuntimeError("榜单任务租约已失效")
                 for future in done:
                     item = future.result()
                     if item is None:
                         raise InterruptedError
                     items[item.secid] = item
-                    self._writer.record(trade_date, item, progress(), owner, self._clock.now(), self._lease_seconds)
+                    self._checkpoints.record(trade_date, item, progress(), owner, self._clock.now(), self._lease_seconds)
                 fill()
             if cancelled():
                 raise InterruptedError
@@ -123,15 +128,15 @@ class BuildDailyRankingsCommand:
                                  rank_entries(entries, "bearish"), trade_date, total, state.analyzed_count,
                                  state.failed_count, "degraded" if state.failed_count else "ready",
                                  analysis_version=self.analysis_version)
-            self._writer.publish(board, owner, self._clock.now())
+            self._publisher.publish(board, owner, self._clock.now())
             return True
         except InterruptedError:
             # 进程停止导致的中断不是失败：释放租约并保留检查点，下次启动立即续算，不进入失败退避。
-            self._writer.release(owner, self._clock.now())
+            self._lease.release(owner, self._clock.now())
             return False
         except Exception:
             logging.getLogger(__name__).exception("收盘榜单构建失败，收盘日期 %s", trade_date)
-            self._writer.fail(owner, "收盘榜单暂时未能更新，稍后重试", self._clock.now())
+            self._checkpoints.fail(owner, "收盘榜单暂时未能更新，稍后重试", self._clock.now())
             return False
         finally:
             for future in pending:

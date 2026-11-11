@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from backend.app.ranking_worker import RankingWorker
-from backend.domain.rankings import RankingProgress, RankingView
+from backend.application.ranking_jobs import RankingProgress, RankingView
 from backend.domain.analysis_version import ANALYSIS_VERSION
 
 

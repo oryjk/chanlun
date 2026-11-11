@@ -1,6 +1,9 @@
 import ast
 from pathlib import Path, PurePosixPath
+import tempfile
 import unittest
+
+from backend.infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,13 +114,26 @@ class ArchitectureGuardTests(unittest.TestCase):
         self.assertEqual(find_violations(sources), [])
 
     def test_core_layers_do_not_read_the_wall_clock(self):
+        clock_calls = ("datetime.now(", "date.today(", "utcnow(", "time.time(")
         offenders = sorted(
             p.relative_to(ROOT).as_posix()
             for layer in ("backend/domain", "backend/application")
             for p in (ROOT / layer).rglob("*.py")
-            if "datetime.now(" in p.read_text(encoding="utf-8")
+            if any(call in p.read_text(encoding="utf-8") for call in clock_calls)
         )
         self.assertEqual(offenders, [])
+
+    def test_ranking_job_state_lives_in_application(self):
+        import backend.domain.rankings as domain_rankings
+        for name in ("RankingProgress", "RankingView", "RankingItem"):
+            self.assertFalse(hasattr(domain_rankings, name), name)
+
+    def test_sqlite_store_implements_each_ranking_port(self):
+        from backend.application.ports.writers import RankingCheckpointWriter, RankingLease, RankingPublisher
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SqliteRankingStore(Path(tmp) / "r.sqlite3")
+            for port in (RankingLease, RankingCheckpointWriter, RankingPublisher):
+                self.assertIsInstance(store, port)
 
 
 if __name__ == "__main__":

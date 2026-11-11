@@ -91,6 +91,8 @@ class RankingApiTests(unittest.TestCase):
             pipeline,
             self.store,
             self.store,
+            self.store,
+            self.store,
             FixedClock(end),
         )
         self.assertTrue(command.execute(date(2026, 11, 3)))

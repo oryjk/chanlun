@@ -4,8 +4,9 @@ import unittest
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from backend.application.ranking_jobs import RankingProgress
+from backend.domain.analysis_version import ANALYSIS_VERSION
 from backend.domain.models import RankingBoard, TimeFrame
-from backend.domain.rankings import ANALYSIS_VERSION, RankingProgress
 from backend.infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore, _json
 
 

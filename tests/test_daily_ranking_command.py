@@ -32,28 +32,27 @@ class FixedClock:
         return self.value
 
 
-def bullish_candles(end_day=DAY):
-    end = datetime(end_day.year, end_day.month, end_day.day, tzinfo=timezone.utc)
+def bullish_candles():
+    end = datetime(DAY.year, DAY.month, DAY.day, tzinfo=timezone.utc)
     start = end - timedelta(days=len(BULLISH_PRICES) - 1)
-    return tuple(
+    candles = [
         Candle(start + timedelta(days=i), price, price, price + 1, price - 1, 100)
         for i, price in enumerate(BULLISH_PRICES)
-    )
+    ]
+    candles.append(Candle(end + timedelta(days=1), 999, 999, 1000, 998, 100))
+    return tuple(candles)
 
 
-class Snapshots:
+class MarketDataStub:
     def __init__(self, fail=False):
         self.calls = []
         self.fail = fail
 
     def read(self, secid, timeframe, force_refresh=False):
-        return self.execute(secid, timeframe, through_date=DAY, refresh=force_refresh)
-
-    def execute(self, secid, timeframe, *, through_date=DAY, refresh=False):
-        self.calls.append((secid, timeframe, through_date))
+        self.calls.append((secid, timeframe, force_refresh))
         if self.fail:
             raise MarketDataUnavailable("行情服务暂时不可用")
-        return MarketData(Instrument(secid, secid.split(".")[-1], "股票", 2, "test"), bullish_candles(through_date))
+        return MarketData(Instrument(secid, secid.split(".")[-1], "股票", 2, "test"), bullish_candles())
 
 
 class DailyCommandTests(unittest.TestCase):
@@ -66,36 +65,45 @@ class DailyCommandTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def command(self, snapshots):
+    def command(self, market_data):
         pipeline = MarketAnalysisPipeline(
             ChanAnalyzer(),
             StructureGuidanceEvaluator(),
             ChanSignalAnalyzer(),
             SignalQualityEvaluator(),
         )
-        return BuildDailyRankingsCommand(self.pool, snapshots, pipeline, self.store, self.store, FixedClock(NOW))
+        return BuildDailyRankingsCommand(
+            self.pool,
+            market_data,
+            pipeline,
+            self.store,
+            self.store,
+            self.store,
+            self.store,
+            FixedClock(NOW),
+        )
 
     def test_full_pool_is_processed_once_per_close_day_and_get_is_read_only(self):
-        snapshots = Snapshots()
-        self.assertTrue(self.command(snapshots).execute(DAY))
-        self.assertEqual(len(snapshots.calls), 41)
-        self.assertTrue(all(call[2] == DAY for call in snapshots.calls))
-        self.assertFalse(self.command(snapshots).execute(DAY))
-        self.assertEqual(len(snapshots.calls), 41)
+        market_data = MarketDataStub()
+        self.assertTrue(self.command(market_data).execute(DAY))
+        self.assertEqual(len(market_data.calls), 41)
+        self.assertFalse(self.command(market_data).execute(DAY))
+        self.assertEqual(len(market_data.calls), 41)
         query = GetRankingsQuery(self.store)
         board = query.execute(6)
         self.assertEqual(len(board.bullish), 6)
+        self.assertTrue(all(entry.latest == BULLISH_PRICES[-1] for entry in board.bullish))
         self.assertEqual(board.total_count, 41)
         self.assertEqual(board.analyzed_count, 41)
         self.assertEqual(board.trade_date, DAY)
         query.execute(10)
-        self.assertEqual(len(snapshots.calls), 41)
+        self.assertEqual(len(market_data.calls), 41)
 
     def test_all_failures_keep_previous_board_and_record_error(self):
-        self.command(Snapshots()).execute(DAY)
+        self.command(MarketDataStub()).execute(DAY)
         previous = self.store.read().board
         with self.assertLogs("backend.application.commands.build_daily_rankings", level="ERROR"):
-            self.command(Snapshots(True)).execute(date(2026, 11, 4))
+            self.command(MarketDataStub(True)).execute(date(2026, 11, 4))
         self.assertEqual(self.store.read().board, previous)
         self.assertEqual(self.store.read().progress.state, "error")
 
@@ -118,27 +126,36 @@ class DailyCommandTests(unittest.TestCase):
         self.assertEqual(query.execute("0.000001", "1d").summary.latest, 10)
         quotes.close = 11
         pool = SimpleNamespace(list_all=lambda **kwargs: (self.stocks[0],))
-        command = BuildDailyRankingsCommand(pool, reader, pipeline, self.store, self.store, FixedClock(NOW))
+        command = BuildDailyRankingsCommand(
+            pool,
+            reader,
+            pipeline,
+            self.store,
+            self.store,
+            self.store,
+            self.store,
+            FixedClock(NOW),
+        )
         self.assertTrue(command.execute(DAY))
         self.assertEqual(self.store.read().board.bullish[0].latest, 11)
 
     def test_cancellation_retains_checkpoint_without_publishing_empty_board(self):
-        snapshots = Snapshots()
-        self.assertFalse(self.command(snapshots).execute(DAY, cancelled=lambda: True))
+        market_data = MarketDataStub()
+        self.assertFalse(self.command(market_data).execute(DAY, cancelled=lambda: True))
         self.assertIsNone(self.store.read().board)
-        self.assertEqual(snapshots.calls, [])
+        self.assertEqual(market_data.calls, [])
 
     def test_partial_failure_is_counted_without_reusing_previous_prices(self):
-        snapshots = Snapshots()
-        original = snapshots.execute
+        market_data = MarketDataStub()
+        original = market_data.read
         failed_calls = []
-        def execute(secid, timeframe, **kwargs):
+        def read(secid, timeframe, force_refresh=False):
             if secid == self.stocks[0].secid:
                 failed_calls.append(secid)
                 raise MarketDataUnavailable("temporary")
-            return original(secid, timeframe, **kwargs)
-        snapshots.execute = execute
-        self.assertTrue(self.command(snapshots).execute(DAY))
+            return original(secid, timeframe, force_refresh=force_refresh)
+        market_data.read = read
+        self.assertTrue(self.command(market_data).execute(DAY))
         board = self.store.read().board
         self.assertEqual((board.total_count, board.analyzed_count, board.failed_count), (41, 40, 1))
         self.assertEqual(board.state, "degraded")
@@ -146,13 +163,13 @@ class DailyCommandTests(unittest.TestCase):
         self.assertNotIn(self.stocks[0].secid, [entry.stock.secid for entry in board.bullish])
 
     def test_interrupted_batch_resumes_saved_successful_items(self):
-        snapshots = Snapshots()
-        self.assertFalse(self.command(snapshots).execute(DAY, cancelled=lambda: len(self.store.read_items(DAY, analysis_version=ANALYSIS_VERSION)) >= 2))
+        market_data = MarketDataStub()
+        self.assertFalse(self.command(market_data).execute(DAY, cancelled=lambda: len(self.store.read_items(DAY, analysis_version=ANALYSIS_VERSION)) >= 2))
         saved = {item.secid for item in self.store.read_items(DAY, analysis_version=ANALYSIS_VERSION) if item.error is None}
         self.assertGreaterEqual(len(saved), 2)
         self.assertEqual(self.store.read().progress.state, "preparing")
         self.assertIsNone(self.store.read().progress.error)
-        resumed = Snapshots()
+        resumed = MarketDataStub()
         self.assertTrue(self.command(resumed).execute(DAY))
         self.assertFalse(saved.intersection(call[0] for call in resumed.calls))
         self.assertEqual(self.store.read().board.analyzed_count, 41)

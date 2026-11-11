@@ -5,9 +5,9 @@ from dataclasses import asdict
 from datetime import date, datetime
 from pathlib import Path
 
+from ...application.ranking_jobs import RankingItem, RankingProgress, RankingView
 from ...domain.models import BuySellPoint, QuotePoint, RankingBoard, RankingEntry, SignalQuality, Stock, TimeFrame
 from ...domain.analysis_version import LEGACY_ANALYSIS_VERSION
-from ...domain.rankings import RankingItem, RankingProgress, RankingView
 
 
 def _json(value):
