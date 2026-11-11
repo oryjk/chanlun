@@ -5,6 +5,8 @@ from backend.application.queries.get_market_snapshot import GetMarketSnapshotQue
 from backend.domain.models import Candle, Fractal, Instrument, MarketData, Pen
 from backend.domain.services.chan_analyzer import ChanAnalyzer
 from backend.domain.services.chan_signals import ChanSignalAnalyzer
+from backend.domain.services.market_analysis import MarketAnalysisPipeline
+from backend.domain.services.signal_quality import SignalQualityEvaluator
 from backend.domain.services.structure_guidance import StructureGuidanceEvaluator
 
 
@@ -205,11 +207,22 @@ class SnapshotSummaryTests(unittest.TestCase):
             def read(self, secid, timeframe, force_refresh=False):
                 return MarketData(instrument=instrument, candles=candles)
 
+        class FixedClock:
+            def __init__(self, value):
+                self.value = value
+
+            def now(self):
+                return self.value
+
         query = GetMarketSnapshotQuery(
             StubMarketReader(),
-            ChanAnalyzer(),
-            StructureGuidanceEvaluator(),
-            ChanSignalAnalyzer(),
+            MarketAnalysisPipeline(
+                ChanAnalyzer(),
+                StructureGuidanceEvaluator(),
+                ChanSignalAnalyzer(),
+                SignalQualityEvaluator(),
+            ),
+            FixedClock(START),
         )
         snapshot = query.execute("1.600519", "30m")
 

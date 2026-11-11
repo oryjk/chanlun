@@ -110,6 +110,15 @@ class ArchitectureGuardTests(unittest.TestCase):
         self.assertGreater(len(sources), 0)
         self.assertEqual(find_violations(sources), [])
 
+    def test_core_layers_do_not_read_the_wall_clock(self):
+        offenders = sorted(
+            p.relative_to(ROOT).as_posix()
+            for layer in ("backend/domain", "backend/application")
+            for p in (ROOT / layer).rglob("*.py")
+            if "datetime.now(" in p.read_text(encoding="utf-8")
+        )
+        self.assertEqual(offenders, [])
+
 
 if __name__ == "__main__":
     unittest.main()

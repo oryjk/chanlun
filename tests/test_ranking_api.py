@@ -4,7 +4,7 @@ import tempfile
 import threading
 import time
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.request import urlopen
@@ -14,7 +14,12 @@ from fastapi import FastAPI
 
 from backend.application.commands.build_daily_rankings import BuildDailyRankingsCommand
 from backend.application.queries.get_rankings import GetRankingsQuery
-from backend.domain.models import Stock
+from backend.domain.models import Candle, Instrument, MarketData, Stock
+from backend.domain.services.chan_analyzer import ChanAnalyzer
+from backend.domain.services.chan_signals import ChanSignalAnalyzer
+from backend.domain.services.market_analysis import MarketAnalysisPipeline
+from backend.domain.services.signal_quality import SignalQualityEvaluator
+from backend.domain.services.structure_guidance import StructureGuidanceEvaluator
 from backend.infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
 from backend.interfaces.api.routes import router
 
@@ -58,13 +63,36 @@ class RankingApiTests(unittest.TestCase):
 
     def test_http_reads_published_close_snapshot_without_recomputing(self):
         calls = []
-        def snapshot(secid, timeframe, **kwargs):
+        prices = (105, 100, 105, 110, 115, 120, 116, 112, 108, 105, 111, 117, 123, 130, 128, 126, 124, 122, 126)
+        end = datetime(2026, 11, 3, tzinfo=timezone.utc)
+        start = end - timedelta(days=len(prices) - 1)
+        candles = tuple(
+            Candle(start + timedelta(days=i), price, price, price + 1, price - 1, 100)
+            for i, price in enumerate(prices)
+        )
+        def read_market(secid, timeframe, **kwargs):
             calls.append(secid)
-            return SimpleNamespace(guidance=SimpleNamespace(bias="bullish", strength=3, invalidation_price=9),
-                                   summary=SimpleNamespace(latest=10, change_percent=1), signals=SimpleNamespace(points=()))
+            return MarketData(Instrument(secid, secid.split(".")[-1], "股票", 2, "test"), candles)
         stocks = (Stock("0.000001", "000001", "平安银行", "深A"), Stock("1.510300", "510300", "沪深300ETF", "ETF"))
-        command = BuildDailyRankingsCommand(SimpleNamespace(list_all=lambda **kwargs: stocks),
-                                           SimpleNamespace(execute=snapshot), self.store, self.store)
+        pipeline = MarketAnalysisPipeline(
+            ChanAnalyzer(),
+            StructureGuidanceEvaluator(),
+            ChanSignalAnalyzer(),
+            SignalQualityEvaluator(),
+        )
+        class FixedClock:
+            def __init__(self, value):
+                self.value = value
+            def now(self):
+                return self.value
+        command = BuildDailyRankingsCommand(
+            SimpleNamespace(list_all=lambda **kwargs: stocks),
+            SimpleNamespace(read=read_market),
+            pipeline,
+            self.store,
+            self.store,
+            FixedClock(end),
+        )
         self.assertTrue(command.execute(date(2026, 11, 3)))
         before = self.path.stat().st_mtime_ns
         for _ in range(2):

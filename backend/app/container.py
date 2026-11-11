@@ -13,11 +13,13 @@ from ..application.queries.search_stocks import SearchStocksQuery
 from ..application.queries.services import QueryServices
 from ..domain.services.chan_analyzer import ChanAnalyzer
 from ..domain.services.chan_signals import ChanSignalAnalyzer
+from ..domain.services.market_analysis import MarketAnalysisPipeline
 from ..domain.services.structure_guidance import StructureGuidanceEvaluator
 from ..domain.services.signal_quality import SignalQualityEvaluator
 from ..infrastructure.auth.registration_gateway import RegistrationSystemGateway
 from ..infrastructure.auth.signed_session_codec import SignedSessionCodec
 from ..infrastructure.cache.market_data_cache import CachedMarketDataReader
+from ..infrastructure.clock import SystemClock
 from ..infrastructure.http.json_client import JsonHttpClient
 from ..infrastructure.market.eastmoney_intraday import EastmoneyIntradayReader
 from ..infrastructure.market.eastmoney_market_data import EastmoneyMarketDataReader
@@ -47,13 +49,14 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
     quote_store = JsonQuoteStore("var/quotes")
     registration = RegistrationSystemGateway(settings.registration_api_base)
     session_codec = SignedSessionCodec(settings.session_secret, settings.session_max_age)
-    snapshot_query = GetMarketSnapshotQuery(
-        market_data,
+    clock = SystemClock()
+    pipeline = MarketAnalysisPipeline(
         ChanAnalyzer(),
         StructureGuidanceEvaluator(),
         ChanSignalAnalyzer(),
         SignalQualityEvaluator(),
     )
+    snapshot_query = GetMarketSnapshotQuery(market_data, pipeline, clock)
     ranking_store = SqliteRankingStore(settings.ranking_store_path)
     stock_universe = FallbackStockUniverseReader(EastmoneyStockPoolReader(http_client), SinaStockPoolReader(http_client))
     queries = QueryServices(
@@ -69,8 +72,15 @@ def build_services(settings: Settings) -> tuple[QueryServices, CommandServices]:
     commands = CommandServices(
         record_quote_sample=RecordQuoteSampleCommand(quote_store),
         login_with_webview_code=LoginWithWebviewCodeCommand(registration, session_codec),
-        build_daily_rankings=BuildDailyRankingsCommand(stock_universe, snapshot_query,
-                                                      ranking_store, ranking_store, workers=settings.ranking_workers),
+        build_daily_rankings=BuildDailyRankingsCommand(
+            stock_universe,
+            market_data,
+            pipeline,
+            ranking_store,
+            ranking_store,
+            clock,
+            workers=settings.ranking_workers,
+        ),
     )
     return queries, commands
 

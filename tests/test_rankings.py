@@ -1,6 +1,6 @@
 import unittest
 import tempfile
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from types import SimpleNamespace
@@ -8,7 +8,12 @@ from types import SimpleNamespace
 from backend.application.commands.build_daily_rankings import BuildDailyRankingsCommand
 from backend.domain.rankings import rank_entries
 from backend.domain.errors import MarketDataNotFound
-from backend.domain.models import RankingEntry, Stock
+from backend.domain.models import Candle, Instrument, MarketData, RankingEntry, Stock
+from backend.domain.services.chan_analyzer import ChanAnalyzer
+from backend.domain.services.chan_signals import ChanSignalAnalyzer
+from backend.domain.services.market_analysis import MarketAnalysisPipeline
+from backend.domain.services.signal_quality import SignalQualityEvaluator
+from backend.domain.services.structure_guidance import StructureGuidanceEvaluator
 from backend.infrastructure.market.eastmoney_stock_pool import EastmoneyStockPoolReader
 from backend.infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
 
@@ -21,17 +26,31 @@ class StubPoolReader:
         return self.stocks
 
 
+class FixedClock:
+    def __init__(self, value):
+        self.value = value
+
+    def now(self):
+        return self.value
+
+
 class StubSnapshotQuery:
     def __init__(self, results):
         self.results = results
         self.calls = []
         self.lock = Lock()
 
-    def execute(self, secid, timeframe, **kwargs):
+    def read(self, secid, timeframe, force_refresh=False):
         with self.lock:
             self.calls.append((secid, timeframe))
-        guidance, summary, *points = self.results[secid]
-        return SimpleNamespace(guidance=guidance, summary=summary, signals=SimpleNamespace(points=tuple(points)))
+        prices = (105, 100, 105, 110, 115, 120, 116, 112, 108, 105, 111, 117, 123, 130, 128, 126, 124, 122, 126)
+        end = datetime(2026, 11, 3, tzinfo=timezone.utc)
+        start = end - timedelta(days=len(prices) - 1)
+        candles = tuple(
+            Candle(start + timedelta(days=i), price, price, price + 1, price - 1, 100)
+            for i, price in enumerate(prices)
+        )
+        return MarketData(Instrument(secid, secid.split(".")[-1], "股票", 2, "test"), candles)
 
 
 class StubHttpClient:
@@ -90,7 +109,20 @@ class RankingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             store = SqliteRankingStore(Path(directory) / "rankings.db")
-            BuildDailyRankingsCommand(EastmoneyStockPoolReader(StubHttpClient(items)), snapshots, store, store).execute(date(2026, 11, 3))
+            pipeline = MarketAnalysisPipeline(
+                ChanAnalyzer(),
+                StructureGuidanceEvaluator(),
+                ChanSignalAnalyzer(),
+                SignalQualityEvaluator(),
+            )
+            BuildDailyRankingsCommand(
+                EastmoneyStockPoolReader(StubHttpClient(items)),
+                snapshots,
+                pipeline,
+                store,
+                store,
+                FixedClock(datetime(2026, 11, 3, 8, tzinfo=timezone.utc)),
+            ).execute(date(2026, 11, 3))
             board = store.read().board
 
         self.assertEqual(len(snapshots.calls), 40)

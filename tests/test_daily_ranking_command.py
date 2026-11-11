@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from backend.domain.analysis_version import ANALYSIS_VERSION
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,11 +13,32 @@ from backend.application.queries.get_market_snapshot import GetMarketSnapshotQue
 from backend.infrastructure.cache.market_data_cache import CachedMarketDataReader
 from backend.domain.services.chan_analyzer import ChanAnalyzer
 from backend.domain.services.chan_signals import ChanSignalAnalyzer
+from backend.domain.services.market_analysis import MarketAnalysisPipeline
+from backend.domain.services.signal_quality import SignalQualityEvaluator
+from backend.domain.services.structure_guidance import StructureGuidanceEvaluator
 from backend.infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
 
 
 NOW = datetime(2026, 11, 3, 8, tzinfo=timezone.utc)
 DAY = date(2026, 11, 3)
+BULLISH_PRICES = (105, 100, 105, 110, 115, 120, 116, 112, 108, 105, 111, 117, 123, 130, 128, 126, 124, 122, 126)
+
+
+class FixedClock:
+    def __init__(self, value):
+        self.value = value
+
+    def now(self):
+        return self.value
+
+
+def bullish_candles(end_day=DAY):
+    end = datetime(end_day.year, end_day.month, end_day.day, tzinfo=timezone.utc)
+    start = end - timedelta(days=len(BULLISH_PRICES) - 1)
+    return tuple(
+        Candle(start + timedelta(days=i), price, price, price + 1, price - 1, 100)
+        for i, price in enumerate(BULLISH_PRICES)
+    )
 
 
 class Snapshots:
@@ -25,15 +46,14 @@ class Snapshots:
         self.calls = []
         self.fail = fail
 
-    def execute(self, secid, timeframe, *, through_date, refresh=False):
+    def read(self, secid, timeframe, force_refresh=False):
+        return self.execute(secid, timeframe, through_date=DAY, refresh=force_refresh)
+
+    def execute(self, secid, timeframe, *, through_date=DAY, refresh=False):
         self.calls.append((secid, timeframe, through_date))
         if self.fail:
             raise MarketDataUnavailable("行情服务暂时不可用")
-        return SimpleNamespace(
-            guidance=SimpleNamespace(bias="bullish", strength=3, invalidation_price=9),
-            summary=SimpleNamespace(latest=10, change_percent=1),
-            signals=SimpleNamespace(points=()),
-        )
+        return MarketData(Instrument(secid, secid.split(".")[-1], "股票", 2, "test"), bullish_candles(through_date))
 
 
 class DailyCommandTests(unittest.TestCase):
@@ -47,7 +67,13 @@ class DailyCommandTests(unittest.TestCase):
         self.temp.cleanup()
 
     def command(self, snapshots):
-        return BuildDailyRankingsCommand(self.pool, snapshots, self.store, self.store, now=lambda: NOW)
+        pipeline = MarketAnalysisPipeline(
+            ChanAnalyzer(),
+            StructureGuidanceEvaluator(),
+            ChanSignalAnalyzer(),
+            SignalQualityEvaluator(),
+        )
+        return BuildDailyRankingsCommand(self.pool, snapshots, pipeline, self.store, self.store, FixedClock(NOW))
 
     def test_full_pool_is_processed_once_per_close_day_and_get_is_read_only(self):
         snapshots = Snapshots()
@@ -81,12 +107,18 @@ class DailyCommandTests(unittest.TestCase):
                            Candle(datetime(2026, 11, 3, tzinfo=timezone.utc), 10, inner.close, 12, 9, 100))
                 return MarketData(Instrument("0.000001", "000001", "平安银行", 2, "test"), candles)
         quotes = Quotes()
-        query = GetMarketSnapshotQuery(CachedMarketDataReader(quotes), ChanAnalyzer(),
-                  SimpleNamespace(evaluate=lambda *args: MarketGuidance("bullish", (), 9, 3)), ChanSignalAnalyzer())
+        reader = CachedMarketDataReader(quotes)
+        pipeline = MarketAnalysisPipeline(
+            ChanAnalyzer(),
+            SimpleNamespace(evaluate=lambda *args: MarketGuidance("bullish", (), 9, 3)),
+            ChanSignalAnalyzer(),
+            SignalQualityEvaluator(),
+        )
+        query = GetMarketSnapshotQuery(reader, pipeline, FixedClock(NOW))
         self.assertEqual(query.execute("0.000001", "1d").summary.latest, 10)
         quotes.close = 11
         pool = SimpleNamespace(list_all=lambda **kwargs: (self.stocks[0],))
-        command = BuildDailyRankingsCommand(pool, query, self.store, self.store, now=lambda: NOW)
+        command = BuildDailyRankingsCommand(pool, reader, pipeline, self.store, self.store, FixedClock(NOW))
         self.assertTrue(command.execute(DAY))
         self.assertEqual(self.store.read().board.bullish[0].latest, 11)
 

@@ -5,10 +5,11 @@ from zoneinfo import ZoneInfo
 
 from backend.domain.errors import MarketDataNotFound, MarketDataUnavailable
 from backend.domain.models import Candle, Instrument, MarketData, TimeFrame
-from backend.application.queries.get_market_snapshot import GetMarketSnapshotQuery
 from backend.infrastructure.market.eastmoney_stock_pool import EastmoneyStockPoolReader
 from backend.domain.services.chan_analyzer import ChanAnalyzer
 from backend.domain.services.chan_signals import ChanSignalAnalyzer
+from backend.domain.services.market_analysis import MarketAnalysisPipeline, close_window
+from backend.domain.services.signal_quality import SignalQualityEvaluator
 from backend.domain.services.structure_guidance import StructureGuidanceEvaluator
 
 
@@ -61,13 +62,17 @@ class FullMarketTests(unittest.TestCase):
         candles = tuple(Candle(datetime(2026, 11, day, tzinfo=ZoneInfo("Asia/Shanghai")), 10, close, close + 1, 9, 100)
                         for day, close in ((2, 10), (3, 11), (4, 20)))
         data = MarketData(Instrument("1.600519", "600519", "贵州茅台", 2, "test"), candles)
-        reader = SimpleNamespace(read=lambda *args, **kwargs: data)
-        query = GetMarketSnapshotQuery(reader, ChanAnalyzer(), StructureGuidanceEvaluator(), ChanSignalAnalyzer())
-        snapshot = query.execute("1.600519", "1d", through_date=date(2026, 11, 3))
+        pipeline = MarketAnalysisPipeline(
+            ChanAnalyzer(),
+            StructureGuidanceEvaluator(),
+            ChanSignalAnalyzer(),
+            SignalQualityEvaluator(),
+        )
+        snapshot = pipeline.analyze(close_window(data, date(2026, 11, 3)), TimeFrame.ONE_DAY, as_of=candles[-1].time)
         self.assertEqual(len(snapshot.candles), 2)
         self.assertEqual(snapshot.summary.latest, 11)
         with self.assertRaises(MarketDataNotFound):
-            query.execute("1.600519", "1d", through_date=date(2026, 11, 5))
+            close_window(data, date(2026, 11, 5))
 
 
 if __name__ == "__main__":
