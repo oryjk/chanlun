@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>缠观 Android 下载</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #EEF0F2;
+      --sheet: #FFFFFF;
+      --text: #1A222C;
+      --muted: #606E7E;
+      --line: #E3E6EA;
+      --accent: #2E4A6E;
+      --gold: #B48A42;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    main {
+      width: min(760px, calc(100% - 32px));
+      margin: auto;
+      padding: 40px 0 56px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 22px;
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .mark {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(22px, 5vw, 30px);
+    }
+    .sub {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .release {
+      margin-top: 12px;
+      padding: 22px;
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .version-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: baseline;
+    }
+    h2 {
+      margin: 0;
+      font-size: 19px;
+      font-variant-numeric: tabular-nums;
+    }
+    .published {
+      color: var(--muted);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+    .download {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 46px;
+      margin-top: 18px;
+      border-radius: 4px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 15px;
+    }
+    dl {
+      display: grid;
+      grid-template-columns: 90px minmax(0, 1fr);
+      gap: 10px 16px;
+      margin: 20px 0 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      font-variant-numeric: tabular-nums;
+    }
+    dt { color: var(--muted); font-size: 13px; }
+    dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }
+    code { font-size: 12px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    h3 { margin: 24px 0 10px; font-size: 15px; }
+    ul { margin: 0; padding-left: 20px; line-height: 1.75; font-size: 14px; }
+    .history {
+      margin-top: 12px;
+      padding: 20px 22px;
+      background: var(--sheet);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .history h3 { margin-top: 0; }
+    .history a { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .notice {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--gold);
+      background: #FAF8F3;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    @media (max-width: 540px) {
+      main { padding-top: 20px; }
+      .release, header, .history { padding: 16px; }
+      .version-line { display: block; }
+      .published { margin-top: 6px; display: block; }
+      dl { grid-template-columns: 72px minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="mark">缠</div>
+    <div>
+      <h1>缠观 Android</h1>
+      <p class="sub">股票与 ETF 四周期缠论结构、多级别联立与全市场收盘榜单</p>
+    </div>
+  </header>
+  <section class="release">
+    <div class="version-line">
+      <h2 id="version">正在读取版本</h2>
+      <span class="published" id="published">-</span>
+    </div>
+    <a class="download" href="latest.apk" download>下载最新 APK 安装包</a>
+    <dl>
+      <dt>文件大小</dt><dd id="size">-</dd>
+      <dt>SHA256</dt><dd><code id="sha">-</code></dd>
+      <dt>Git 提交</dt><dd><code id="commit">-</code></dd>
+    </dl>
+    <h3>本次更新</h3>
+    <ul id="notes"><li>正在读取发布说明</li></ul>
+    <p class="notice">原生 Android 客户端（100% Kotlin + Jetpack Compose + 原生 Canvas 图表，内置每 30 秒自动检测更新）。手机或平板浏览器下载后若提示安装权限，请允许浏览器安装未知应用。买卖点为规则化结构识别，不构成买卖建议。</p>
+  </section>
+  <section class="history">
+    <h3>历史版本</h3>
+    <ul id="history"><li>正在读取历史版本</li></ul>
+  </section>
+</main>
+<script>
+  const fmtSize = n => n ? `${(n / 1024 / 1024).toFixed(1)} MB` : '-';
+  const fmtTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-';
+  async function load() {
+    const metadata = await fetch('metadata.json', { cache: 'no-store' }).then(r => {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+    document.querySelector('#version').textContent = `版本 v${metadata.versionName} (#${metadata.versionCode})`;
+    const download = document.querySelector('.download');
+    download.href = metadata.releaseFile;
+    download.download = metadata.releaseFile.split('/').pop();
+    document.querySelector('#published').textContent = fmtTime(metadata.publishedAt);
+    document.querySelector('#size').textContent = fmtSize(metadata.fileSizeBytes);
+    document.querySelector('#sha').textContent = metadata.sha256;
+    document.querySelector('#commit').textContent = metadata.gitCommit.slice(0, 12);
+    document.querySelector('#notes').innerHTML = metadata.releaseNotes.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+    const history = await fetch('releases.json', { cache: 'no-store' }).then(r => r.json());
+    document.querySelector('#history').innerHTML = history.map(item => `<li><a href="${encodeURI(item.releaseFile)}">v${escapeHtml(item.versionName)} (#${escapeHtml(item.versionCode)})</a>  ${fmtTime(item.publishedAt)}</li>`).join('');
+  }
+  function escapeHtml(value) {
+    const node = document.createElement('span');
+    node.textContent = String(value);
+    return node.innerHTML;
+  }
+  load().catch(() => {
+    document.querySelector('#version').textContent = '版本信息读取失败';
+  });
+</script>
+</body>
+</html>

@@ -40,3 +40,13 @@ xcuserdata/
 *.xcarchive
 *.ipa
 *.p8
+
+# Native Android builds and local SDK configuration
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore

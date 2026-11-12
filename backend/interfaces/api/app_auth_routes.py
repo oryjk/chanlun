@@ -3,7 +3,13 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ...domain.app_auth import AuthRejected, AuthUnavailable
+from ...domain.app_auth import (
+    AuthConflict,
+    AuthRateLimited,
+    AuthRejected,
+    AuthUnavailable,
+    AuthValidationError,
+)
 
 router = APIRouter(prefix='/api/app-auth')
 
@@ -19,10 +25,26 @@ class AppleNotificationRequest(BaseModel):
     payload: str = Field(min_length=1, max_length=32768)
 
 
+class EmailCodeRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=254)
+
+
+class EmailRegisterRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=254)
+    code: str = Field(min_length=1, max_length=16)
+    password: str = Field(min_length=1, max_length=256)
+    nickname: str | None = Field(default=None, max_length=60)
+
+
+class EmailLoginRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+
+
 def services(request):
     value = request.app.state.native_auth
     if value.commands is None:
-        raise HTTPException(503, 'Apple 登录尚未配置，行情仍可正常使用')
+        raise HTTPException(503, '原生账号服务尚未配置，行情仍可正常使用')
     return value
 
 
@@ -35,8 +57,14 @@ def bearer(request):
 def invoke(action):
     try:
         return action()
+    except AuthValidationError as error:
+        raise HTTPException(400, str(error)) from None
     except AuthRejected as error:
         raise HTTPException(401, str(error)) from None
+    except AuthConflict as error:
+        raise HTTPException(409, str(error)) from None
+    except AuthRateLimited as error:
+        raise HTTPException(429, str(error)) from None
     except AuthUnavailable as error:
         raise HTTPException(502, str(error)) from None
 
@@ -52,17 +80,35 @@ def login(request: Request, body: AppleLoginRequest):
         body.challenge_id, body.identity_token, body.authorization_code, body.nickname)))
 
 
+@router.post('/email/code')
+def send_email_code(request: Request, body: EmailCodeRequest):
+    invoke(lambda: services(request).commands.send_email_code(body.email))
+    return {'ok': True, 'expires_in': 600, 'cooldown_seconds': 60}
+
+
+@router.post('/email/register')
+def register_email(request: Request, body: EmailRegisterRequest):
+    return asdict(invoke(lambda: services(request).commands.register_email(
+        body.email, body.code, body.password, body.nickname)))
+
+
+@router.post('/email/login')
+def login_email(request: Request, body: EmailLoginRequest):
+    return asdict(invoke(lambda: services(request).commands.login_email(
+        body.email, body.password)))
+
+
 @router.get('/session')
 def session(request: Request):
     value = request.app.state.native_auth
     user = value.session.execute(bearer(request)) if value.session else None
-    return {'authenticated':user is not None, 'user':asdict(user) if user else None}
+    return {'authenticated': user is not None, 'user': asdict(user) if user else None}
 
 
 @router.post('/logout')
 def logout(request: Request):
     services(request).commands.logout(bearer(request))
-    return {'ok':True}
+    return {'ok': True}
 
 
 @router.post('/delete-account')
@@ -71,12 +117,14 @@ def delete_account(request: Request):
     if not token:
         raise HTTPException(401, '请先登录')
     invoke(lambda: services(request).commands.delete_account(token))
-    return {'ok':True}
+    return {'ok': True}
 
 
 @router.post('/apple-notifications')
 def notifications(request: Request, body: AppleNotificationRequest):
     value = services(request)
+    if value.apple is None:
+        raise HTTPException(503, 'Apple 登录尚未配置')
     event = invoke(lambda: value.apple.verify_notification(body.payload))
     value.commands.process_event(*event)
-    return {'ok':True}
+    return {'ok': True}

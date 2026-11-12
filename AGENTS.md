@@ -169,3 +169,22 @@ cd frontend && bun test src && bun run build
 - Apple 登录默认关闭：`CHANLUN_APPLE_ENABLED=false`。启用需设置 `CHANLUN_APPLE_CLIENT_ID`（Bundle ID）、`CHANLUN_APPLE_TEAM_ID`、`CHANLUN_APPLE_KEY_ID`、`CHANLUN_APPLE_KEY_PATH`、至少 32 字符的稳定 `CHANLUN_APPLE_TOKEN_ENCRYPTION_KEY`。账号库由 `CHANLUN_APP_AUTH_STORE_PATH` 控制，默认 `var/accounts/accounts.sqlite3`；私钥、`var/accounts/` 与 `ios/Local.xcconfig` 不入库。
 - 原生端停止不可见页面和后台轮询，恢复前台重新判断市场时段和会话；请求与认证各自使用 generation，旧响应不得覆盖新证券或恢复已撤销的身份。报价按市场日期去重合并，避免跨日曲线混合。
 - 当前机器没有 Swift/Xcode，用户明确允许先写源码并提交，随后在 Mac 编译。这里必须执行 `uv run --with tree-sitter --with tree-sitter-swift python ios/scripts/check_sources.py --syntax` 和后端/H5 检查；Swift 类型检查、Xcode Build、XCTest、模拟器/真机截图、签名和 TestFlight 安装必须在 Mac 完成，不能以静态语法检查冒充通过。
+
+## 八、原生 Android（手机与平板）
+
+- `android/` 使用 100% Kotlin（`2.0.21`）+ Jetpack Compose（`Compose BOM 2024.12.01`）+ 原生 `Canvas` K 线/分时图表，`compileSdk = 35`、`minSdk = 26`，同一应用自适应手机（底部导航、单列布局）与平板/横屏宽屏（左侧导航栏、双栏主从布局）。`android/README.md` 记录构建与邮箱登录配置步骤。
+- 原生 Android 同样遵循 `Presentation -> Application -> Domain`，`Infrastructure` 实现读写/身份/更新端口，`App`（`AppContainer.kt`）是唯一组合根。`domain` 与 `application` 不导入 `android.*`、`androidx.*`、`okhttp3.*` 或 `com.google.gson.*`，由 `android/app/src/test/java/cn/oryjk/changuan/ArchitectureTest.kt` 自动守护。
+- Android 端登录采用 **账号密码登录 + 邮箱验证码注册**（游客可使用全部行情与榜单功能）：
+  - `POST /api/app-auth/email/code`：校验未注册邮箱并发送 6 位数字验证码（10 分钟有效、60 秒发送冷却，最多校验 5 次）。
+  - `POST /api/app-auth/email/register`：校验邮箱验证码并设置密码（`scrypt` 哈希存储），创建独立 UUID 账号并签发 30 天 Bearer 会话令牌。
+  - `POST /api/app-auth/email/login`：使用邮箱与密码登录并签发 30 天 Bearer 会话令牌。
+  - 会话恢复（`GET /api/app-auth/session`）、退出（`POST /api/app-auth/logout`）与删除账号（`POST /api/app-auth/delete-account`）与原生身份体系共用，`infrastructure/auth/smtp_gateway.py` 实现 `EmailCodeGateway` 端口。
+- 邮箱认证环境变量：`CHANLUN_EMAIL_AUTH_ENABLED=true`，以及 `CHANLUN_SMTP_HOST`、`CHANLUN_SMTP_PORT`（默认 `465`）、`CHANLUN_SMTP_USERNAME`、`CHANLUN_SMTP_PASSWORD`、`CHANLUN_SMTP_FROM`、`CHANLUN_SMTP_TLS_MODE`（`tls` 或 `starttls`）和 `CHANLUN_APP_AUTH_SECRET`。
+- **30 秒自动检测新版本**：客户端 `AppViewModel`（`UPDATE_CHECK_INTERVAL_MILLIS = 30_000L`）在前台每间隔 **30 秒**自动请求一次 `http://172.16.60.233/chanlun-android/metadata.json`（无缓存），发现远端 `versionCode > BuildConfig.VERSION_CODE` 时自动弹出更新对话框，支持应用内带进度下载、SHA-256 校验与 `FileProvider` 一键调起系统安装器，「账号」页常驻展示当前版本号、最近自动巡检时间与「立即检查更新」按钮。
+- **每次修改完任务后的强制打包与 7T 硬盘发布流程**：
+  1. 在 `android/app/build.gradle.kts` 中将 `versionCode` 递增 `+1` 并同步更新 `versionName`。
+  2. 运行 `cd android && ./gradlew testDebugUnitTest assembleDebug` 确保测试与打包通过。
+  3. 执行 `git add -A && git commit -m "..." && git push origin main` 提交并推送到远端仓库。
+  4. 执行 `./android/scripts/publish-apk.sh --skip-build --note "本次更新说明"` 将新包发布到 **7T 硬盘**（`/data7t/apk-downloads/chanlun-android`），自动更新本机 Nginx 主页下载站（导航入口 `http://172.16.60.233/`，专属下载页 `http://172.16.60.233/chanlun-android/`）。
+
+

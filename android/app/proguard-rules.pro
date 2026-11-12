@@ -1,0 +1,4 @@
+-keepattributes Signature, InnerClasses, EnclosingMethod
+-keepclassmembers class cn.oryjk.changuan.** { *; }
+-dontwarn okhttp3.**
+-dontwarn okio.**

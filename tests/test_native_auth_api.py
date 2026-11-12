@@ -32,6 +32,14 @@ class FakeApple:
         raise AuthRejected('通知无效')
 
 
+class FakeEmailGateway:
+    def __init__(self):
+        self.codes = {}
+
+    def send_verification_code(self, email: str, code: str, expires_minutes: int) -> None:
+        self.codes[email] = code
+
+
 class NativeAuthHTTPTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -39,7 +47,8 @@ class NativeAuthHTTPTests(unittest.TestCase):
         store = SqliteAppAuthStore(Path(cls.temp.name) / 'auth.db', 'test' * 10)
         now = lambda: datetime.now(timezone.utc)
         apple = FakeApple()
-        service = AppAuthService(store, store, apple, now)
+        cls.email_gateway = FakeEmailGateway()
+        service = AppAuthService(store, store, apple, now, cls.email_gateway)
         app = FastAPI()
         app.state.native_auth = NativeAuthServices(service, GetAppSession(store, now), apple)
         app.include_router(router)
@@ -97,6 +106,35 @@ class NativeAuthHTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/apple', {'challenge_id':'unknown','identity_token':'x','authorization_code':'x'})[0], 401)
         self.assertEqual(self.request('/apple', {})[0], 422)
         self.assertEqual(self.request('/apple-notifications', {'payload':'forged'})[0], 401)
+
+    def test_email_code_register_and_login_over_http(self):
+        status, code_resp = self.request('/email/code', {'email': 'trader@example.com'})
+        self.assertEqual(status, 200)
+        self.assertTrue(code_resp['ok'])
+        code = self.email_gateway.codes['trader@example.com']
+
+        status, reg = self.request('/email/register', {
+            'email': 'trader@example.com',
+            'code': code,
+            'password': 'TraderPassword123',
+            'nickname': '缠友A',
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(reg['user']['nickname'], '缠友A')
+        self.assertEqual(self.request('/session', token=reg['token'])[1]['user'], reg['user'])
+
+        status, login = self.request('/email/login', {
+            'email': 'trader@example.com',
+            'password': 'TraderPassword123',
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(login['user'], reg['user'])
+
+        self.assertEqual(self.request('/email/login', {'email': 'trader@example.com', 'password': 'wrong'})[0], 401)
+        self.assertEqual(self.request('/email/code', {'email': 'trader@example.com'})[0], 409)
+        self.assertEqual(self.request('/email/code', {'email': 'bad-email'})[0], 400)
+        self.assertEqual(self.request('/delete-account', {}, login['token'])[0], 200)
+        self.assertFalse(self.request('/session', token=login['token'])[1]['authenticated'])
 
 
 class NativeAuthConfigurationTests(unittest.TestCase):

@@ -1,13 +1,26 @@
+import base64
 from contextlib import contextmanager
 from datetime import datetime
 import hashlib
+import hmac
 from pathlib import Path
+import secrets
 import sqlite3
 from uuid import uuid4
 
 from cryptography.fernet import Fernet
 
-from ...domain.app_auth import AppIdentity, AuthRejected, LoginChallenge, Revocation
+from ...domain.app_auth import (
+    AppIdentity,
+    AuthConflict,
+    AuthRateLimited,
+    AuthRejected,
+    EmailVerificationChallenge,
+    LoginChallenge,
+    Revocation,
+    hash_password,
+    verify_password,
+)
 
 
 def digest(value: str) -> str:
@@ -19,7 +32,6 @@ class SqliteAppAuthStore:
         self.path = Path(path).resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # Accept an application secret of >=32 chars; derive a Fernet key.
-        import base64
         self._cipher = Fernet(base64.urlsafe_b64encode(hashlib.sha256(encryption_key.encode()).digest()))
         with self._db() as db:
             db.executescript('''
@@ -29,7 +41,11 @@ class SqliteAppAuthStore:
                     created REAL NOT NULL, expires REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY, subject TEXT UNIQUE NOT NULL, nickname TEXT NOT NULL,
-                    refresh BLOB NOT NULL, authorized REAL NOT NULL DEFAULT 0);
+                    refresh BLOB NOT NULL, authorized REAL NOT NULL DEFAULT 0,
+                    password_hash TEXT NOT NULL DEFAULT '');
+                CREATE TABLE IF NOT EXISTS email_codes (
+                    email_key TEXT PRIMARY KEY, code_digest TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0, created REAL NOT NULL, expires REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS sessions (
                     token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     expires REAL NOT NULL);
@@ -38,8 +54,11 @@ class SqliteAppAuthStore:
                 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, received REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS deletion_receipts (token TEXT PRIMARY KEY, expires REAL NOT NULL);
             ''')
-            if 'authorized' not in {row[1] for row in db.execute('PRAGMA table_info(users)')}:
+            columns = {row[1] for row in db.execute('PRAGMA table_info(users)')}
+            if 'authorized' not in columns:
                 db.execute('ALTER TABLE users ADD COLUMN authorized REAL NOT NULL DEFAULT 0')
+            if 'password_hash' not in columns:
+                db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _db(self, readonly=False):
@@ -86,6 +105,71 @@ class SqliteAppAuthStore:
             db.execute('DELETE FROM tombstones WHERE deleted<?', (now.timestamp() - 600,))
         return user
 
+    def save_email_code(self, challenge: EmailVerificationChallenge, cooldown_seconds: int = 60):
+        now_ts = challenge.created_at.timestamp()
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('DELETE FROM email_codes WHERE expires<=?', (now_ts,))
+            if db.execute('SELECT 1 FROM users WHERE subject=?', (challenge.email_key,)).fetchone():
+                raise AuthConflict('该邮箱已注册，请直接登录')
+            existing = db.execute('SELECT created FROM email_codes WHERE email_key=?', (challenge.email_key,)).fetchone()
+            if existing and (now_ts - existing[0]) < cooldown_seconds:
+                raise AuthRateLimited('验证码发送过于频繁，请稍后再试')
+            db.execute(
+                'INSERT OR REPLACE INTO email_codes(email_key, code_digest, attempts, created, expires) VALUES(?,?,0,?,?)',
+                (challenge.email_key, challenge.code_digest, now_ts, challenge.expires_at.timestamp()),
+            )
+
+    def register_email(self, email_key: str, code_digest: str, password_hash: str, nickname: str,
+                       token: str, expires_at: datetime, now: datetime) -> AppIdentity:
+        now_ts = now.timestamp()
+        rejected = False
+        with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM users WHERE subject=?', (email_key,)).fetchone():
+                raise AuthConflict('该邮箱已注册，请直接登录')
+            row = db.execute(
+                'SELECT code_digest, attempts, expires FROM email_codes WHERE email_key=?',
+                (email_key,),
+            ).fetchone()
+            if not row or row[2] <= now_ts or row[1] >= 5:
+                db.execute('DELETE FROM email_codes WHERE email_key=?', (email_key,))
+                rejected = True
+            elif not hmac.compare_digest(row[0], code_digest):
+                next_attempts = row[1] + 1
+                if next_attempts >= 5:
+                    db.execute('DELETE FROM email_codes WHERE email_key=?', (email_key,))
+                else:
+                    db.execute('UPDATE email_codes SET attempts=? WHERE email_key=?', (next_attempts, email_key))
+                rejected = True
+            else:
+                db.execute('DELETE FROM email_codes WHERE email_key=?', (email_key,))
+                user = AppIdentity(str(uuid4()), nickname)
+                db.execute(
+                    'INSERT INTO users(id,subject,nickname,refresh,authorized,password_hash) VALUES(?,?,?,?,?,?)',
+                    (user.user_id, email_key, user.nickname, b'', now_ts, password_hash),
+                )
+                db.execute('DELETE FROM sessions WHERE expires<=?', (now_ts,))
+                db.execute('INSERT INTO sessions VALUES(?,?,?)', (digest(token), user.user_id, expires_at.timestamp()))
+        if rejected:
+            raise AuthRejected('验证码错误或已过期')
+        return user
+
+    def find_email_credentials(self, email_key: str) -> tuple[AppIdentity, str] | None:
+        with self._db(True) as db:
+            row = db.execute(
+                'SELECT id, nickname, password_hash FROM users WHERE subject=?',
+                (email_key,),
+            ).fetchone()
+        if not row or not row[2]:
+            return None
+        return AppIdentity(row[0], row[1]), row[2]
+
+    def create_session(self, user_id: str, token: str, expires_at: datetime, now: datetime) -> None:
+        with self._db() as db:
+            db.execute('DELETE FROM sessions WHERE expires<=?', (now.timestamp(),))
+            db.execute('INSERT INTO sessions VALUES(?,?,?)', (digest(token), user_id, expires_at.timestamp()))
+
     def session(self, token, now):
         with self._db(True) as db:
             row = db.execute('SELECT u.id,u.nickname FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?',
@@ -98,7 +182,7 @@ class SqliteAppAuthStore:
 
     def _delete(self, db, row, now, enqueue=True):
         user_id, subject, refresh = row
-        if enqueue:
+        if enqueue and refresh:
             db.execute('INSERT INTO revocations VALUES(?,?)', (str(uuid4()), refresh))
         db.execute('DELETE FROM deletion_receipts WHERE expires<=?', (now.timestamp(),))
         db.execute('INSERT OR REPLACE INTO deletion_receipts SELECT token,? FROM sessions WHERE user_id=?',

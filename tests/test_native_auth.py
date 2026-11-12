@@ -157,3 +157,91 @@ class NativeAuthTests(unittest.TestCase):
     def test_guest_and_default_nickname(self):
         self.assertIsNone(self.service.session(None))
         self.assertEqual(self.login().user.nickname, 'Apple 用户')
+
+
+class FakeEmailGateway:
+    def __init__(self):
+        self.sent = []
+        self.available = True
+
+    def send_verification_code(self, email: str, code: str, expires_minutes: int) -> None:
+        if not self.available:
+            from backend.domain.app_auth import AuthUnavailable
+            raise AuthUnavailable('验证码邮件发送失败，请稍后重试')
+        self.sent.append((email, code, expires_minutes))
+
+
+class NativeEmailAuthTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / 'accounts.sqlite3'
+        self.store = SqliteAppAuthStore(self.path, 'test-encryption-key-at-least-32-chars')
+        self.apple = FakeApple()
+        self.email = FakeEmailGateway()
+        self.now = datetime(2026, 11, 12, 6, tzinfo=timezone.utc)
+        self.service = AppAuthService(self.store, self.store, self.apple, lambda: self.now, self.email)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_email_register_login_session_and_delete(self):
+        self.service.send_email_code('  Alice@Example.com ')
+        self.assertEqual(len(self.email.sent), 1)
+        sent_email, code, expires_minutes = self.email.sent[0]
+        self.assertEqual(sent_email, 'alice@example.com')
+        self.assertEqual(len(code), 6)
+        self.assertTrue(code.isdigit())
+        self.assertEqual(expires_minutes, 10)
+
+        registered = self.service.register_email('ALICE@example.com', code, ' StrongPass123 ', '阿狸')
+        self.assertEqual(registered.user.nickname, '阿狸')
+        self.assertEqual(self.service.session(registered.token), registered.user)
+
+        logged_in = self.service.login_email('alice@example.com', ' StrongPass123 ')
+        self.assertEqual(logged_in.user.user_id, registered.user.user_id)
+        self.assertEqual(logged_in.user.nickname, '阿狸')
+        self.assertNotEqual(logged_in.token, registered.token)
+
+        raw = self.path.read_bytes()
+        self.assertNotIn(b'StrongPass123', raw)
+        self.assertNotIn(code.encode(), raw)
+
+        self.service.delete_account(logged_in.token)
+        self.assertIsNone(self.service.session(registered.token))
+        self.assertIsNone(self.service.session(logged_in.token))
+        self.assertEqual(self.store.pending_revocations(), ())
+
+    def test_email_code_cooldown_and_wrong_code_attempts(self):
+        from backend.domain.app_auth import AuthConflict, AuthRateLimited, AuthValidationError
+        self.service.send_email_code('bob@example.com')
+        code = self.email.sent[-1][1]
+
+        with self.assertRaises(AuthRateLimited):
+            self.service.send_email_code('bob@example.com')
+
+        for _ in range(5):
+            with self.assertRaises(AuthRejected):
+                self.service.register_email('bob@example.com', '000000' if code != '000000' else '999999', 'password123')
+
+        with self.assertRaises(AuthRejected):
+            self.service.register_email('bob@example.com', code, 'password123')
+
+        self.now += timedelta(seconds=61)
+        self.service.send_email_code('bob@example.com')
+        fresh_code = self.email.sent[-1][1]
+        self.service.register_email('bob@example.com', fresh_code, 'password123')
+
+        with self.assertRaises(AuthConflict):
+            self.service.send_email_code('bob@example.com')
+        with self.assertRaises(AuthConflict):
+            self.service.register_email('bob@example.com', fresh_code, 'password123')
+
+        with self.assertRaises(AuthRejected):
+            self.service.login_email('bob@example.com', 'wrong-password')
+        with self.assertRaises(AuthRejected):
+            self.service.login_email('nobody@example.com', 'password123')
+        with self.assertRaises(AuthValidationError):
+            self.service.send_email_code('not-an-email')
+        with self.assertRaises(AuthValidationError):
+            self.service.register_email('new@example.com', '123456', 'short')
+
