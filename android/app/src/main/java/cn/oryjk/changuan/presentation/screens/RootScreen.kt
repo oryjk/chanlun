@@ -6,17 +6,25 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,16 +72,39 @@ fun RootScreen(
             HorizontalDivider(color = ChanTheme.Line)
 
             if (useRail) {
-                Row(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .navigationBarsPadding(),
+                ) {
                     NavigationRail(
                         containerColor = ChanTheme.Sheet,
                     ) {
                         RootTab.entries.forEach { tab ->
+                            val selected = state.tab == tab
                             NavigationRailItem(
-                                selected = state.tab == tab,
+                                selected = selected,
                                 onClick = { viewModel.changeTab(tab) },
-                                icon = { Text(tab.label.take(1), fontWeight = FontWeight.SemiBold) },
-                                label = { Text(tab.label, fontSize = 12.sp) },
+                                icon = {
+                                    Text(
+                                        text = tab.label.take(1),
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = tab.label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    )
+                                },
+                                colors = NavigationRailItemDefaults.colors(
+                                    selectedIconColor = ChanTheme.Accent,
+                                    selectedTextColor = ChanTheme.Accent,
+                                    indicatorColor = ChanTheme.Page,
+                                    unselectedIconColor = ChanTheme.TextSecondary,
+                                    unselectedTextColor = ChanTheme.TextSecondary,
+                                ),
                             )
                         }
                     }
@@ -102,13 +134,33 @@ fun RootScreen(
                 NavigationBar(
                     containerColor = ChanTheme.Sheet,
                     tonalElevation = 0.dp,
+                    modifier = Modifier.navigationBarsPadding(),
                 ) {
                     RootTab.entries.forEach { tab ->
+                        val selected = state.tab == tab
                         NavigationBarItem(
-                            selected = state.tab == tab,
+                            selected = selected,
                             onClick = { viewModel.changeTab(tab) },
-                            icon = { Text(tab.label.take(1), fontWeight = FontWeight.SemiBold) },
-                            label = { Text(tab.label, fontSize = 12.sp) },
+                            icon = {
+                                Text(
+                                    text = tab.label.take(1),
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = tab.label,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = ChanTheme.Accent,
+                                selectedTextColor = ChanTheme.Accent,
+                                indicatorColor = Color.Transparent,
+                                unselectedIconColor = ChanTheme.TextSecondary,
+                                unselectedTextColor = ChanTheme.TextSecondary,
+                            ),
                         )
                     }
                 }
@@ -152,8 +204,13 @@ private fun TopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
             .background(ChanTheme.Sheet)
+            .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(
+                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                ),
+            )
+            .height(52.dp)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
