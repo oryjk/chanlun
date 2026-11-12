@@ -4,6 +4,22 @@ function toStock(dto) {
   return { secid: dto.secid, symbol: dto.symbol, name: dto.name, market: dto.market }
 }
 
+function toBuySellPoint(dto) {
+  if (!dto) return null
+  return {
+    kind: dto.kind,
+    side: dto.side,
+    pen_id: dto.pen_id,
+    candle_index: dto.candle_index,
+    time: dto.time,
+    price: dto.price,
+    confirmed: dto.confirmed,
+    reason: dto.reason,
+    invalidation_price: dto.invalidation_price ?? null,
+    source_zone_id: dto.source_zone_id ?? null,
+  }
+}
+
 function toSignalQuality(dto) {
   if (!dto) return null
   return {
@@ -19,6 +35,42 @@ function toSignalQuality(dto) {
     breakout_volume_ratio: dto.breakout_volume_ratio, pullback_volume_ratio: dto.pullback_volume_ratio,
     history_status: dto.history_status || 'unknown', first_detected_at: dto.first_detected_at || null,
     confirmed_at: dto.confirmed_at || null, reasons: [...(dto.reasons || [])],
+  }
+}
+
+function toRankingEntry(dto) {
+  return {
+    rank: dto.rank,
+    stock: toStock(dto.stock),
+    bias: dto.bias,
+    strength: dto.strength,
+    latest: dto.latest,
+    change_percent: dto.change_percent,
+    invalidation_price: dto.invalidation_price ?? null,
+    latest_point: toBuySellPoint(dto.latest_point),
+    buy_point: toBuySellPoint(dto.buy_point),
+    sell_point: toBuySellPoint(dto.sell_point),
+    trend: (dto.trend || []).map((point) => ({ time: point.time, price: point.price })),
+    signal_quality: toSignalQuality(dto.signal_quality),
+    signal_group: dto.signal_group ?? 'observation',
+  }
+}
+
+function toRankingBoard(dto) {
+  return {
+    generated_at: dto.generated_at ?? null,
+    timeframe: dto.timeframe,
+    trade_date: dto.trade_date ?? null,
+    total_count: dto.total_count,
+    analyzed_count: dto.analyzed_count,
+    failed_count: dto.failed_count,
+    state: dto.state,
+    progress_total: dto.progress_total,
+    progress_processed: dto.progress_processed,
+    update_error: dto.update_error ?? null,
+    analysis_version: dto.analysis_version ?? 1,
+    bullish: (dto.bullish || []).map(toRankingEntry),
+    bearish: (dto.bearish || []).map(toRankingEntry),
   }
 }
 
@@ -42,7 +94,7 @@ function toMarketSnapshot(dto) {
     signals: {
       trend_type: dto.signals.trend_type,
       divergences: dto.signals.divergences.map((divergence) => ({ ...divergence })),
-      points: dto.signals.points.map((point) => ({ ...point })),
+      points: (dto.signals?.points || []).map(toBuySellPoint),
     },
     signal_quality: toSignalQuality(dto.signal_quality),
   }
@@ -85,11 +137,7 @@ export function createMarketGateway() {
     },
     async getRankings(limit, signal) {
       const response = await getJson(`/api/rankings?limit=${limit}`, signal)
-      const entries = (items) => (items || []).map((entry) => ({
-        ...entry, stock: toStock(entry.stock), signal_group: entry.signal_group || 'observation',
-        signal_quality: toSignalQuality(entry.signal_quality),
-      }))
-      return { ...response, bullish: entries(response.bullish), bearish: entries(response.bearish) }
+      return toRankingBoard(response)
     },
     async recordQuoteSample(quote, signal) {
       const response = await postJson('/api/quote/samples', {
