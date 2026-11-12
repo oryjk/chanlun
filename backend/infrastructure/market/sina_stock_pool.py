@@ -73,12 +73,11 @@ class SinaStockPoolReader:
             return None
         if len(code) != 6 or not code.isdigit():
             raise MarketDataUnavailable("证券清单包含无效代码，请稍后重试")
-        market = "1" if exchange == "sh" else "0"
         name = str(row.get("name") or code)
         # 与东方财富清单保持同一范围：沪市 6 开头、深市 0/3 开头的 A 股，沪市 5 开头、深市 15 开头的 ETF。
-        equity = (market == "0" and code.startswith(("0", "3"))) or (market == "1" and code.startswith("6"))
-        etf = ((market == "0" and code.startswith("15")) or (market == "1" and code.startswith("5"))) \
+        equity = (exchange == "sz" and code.startswith(("0", "3"))) or (exchange == "sh" and code.startswith("6"))
+        etf = ((exchange == "sz" and code.startswith("15")) or (exchange == "sh" and code.startswith("5"))) \
             and not any(term in name.upper() for term in ("LOF", "REIT"))
         if not (equity or etf):
             return None
-        return Stock(f"{market}.{code}", code, name, "ETF" if etf else "沪A" if market == "1" else "深A")
+        return Stock(f"{code}.{exchange.upper()}", code, name, "ETF" if etf else "沪A" if exchange == "sh" else "深A")

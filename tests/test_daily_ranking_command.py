@@ -59,7 +59,7 @@ class DailyCommandTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = SqliteRankingStore(Path(self.temp.name) / "rankings.db")
-        self.stocks = tuple(Stock(f"0.000{i:03d}", f"000{i:03d}", f"股票{i}", "深A") for i in range(1, 42))
+        self.stocks = tuple(Stock(f"000{i:03d}.SZ", f"000{i:03d}", f"股票{i}", "深A") for i in range(1, 42))
         self.pool = SimpleNamespace(list_all=lambda **kwargs: self.stocks)
 
     def tearDown(self):

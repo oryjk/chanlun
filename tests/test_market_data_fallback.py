@@ -21,7 +21,7 @@ class BrokenTextClient:
 
 class StubSearch:
     def search(self, query):
-        return [Stock("1.510300", "510300", "沪深300ETF", "ETF"), Stock("0.510300", "510300", "其他", "深A")]
+        return [Stock("510300.SH", "510300", "沪深300ETF", "ETF"), Stock("510300.SZ", "510300", "其他", "深A")]
 
 
 class FailingSearch:
@@ -41,7 +41,7 @@ class FailingReader:
 
 class MarketDataFallbackTests(unittest.TestCase):
     def test_sina_jsonp_is_converted_to_candles(self):
-        data = SinaMarketDataReader(StubTextClient()).read("0.301162", TimeFrame.ONE_DAY)
+        data = SinaMarketDataReader(StubTextClient()).read("301162.SZ", TimeFrame.ONE_DAY)
 
         self.assertEqual(len(data.candles), 2)
         self.assertEqual(data.candles[-1].close, 34.10)
@@ -51,16 +51,16 @@ class MarketDataFallbackTests(unittest.TestCase):
     def test_malformed_sina_payload_is_unavailable(self):
         for text in ('var _data=([{"day":"2026-11-02"}]);', 'var _data=([oops]);', 'var _data=([1, 2]);'):
             with self.assertRaises(MarketDataUnavailable):
-                SinaMarketDataReader(BrokenTextClient(text)).read("0.301162", TimeFrame.ONE_DAY)
+                SinaMarketDataReader(BrokenTextClient(text)).read("301162.SZ", TimeFrame.ONE_DAY)
 
     def test_sina_name_and_etf_precision_come_from_search(self):
-        data = SinaMarketDataReader(StubTextClient(), StubSearch()).read("1.510300", TimeFrame.ONE_DAY)
+        data = SinaMarketDataReader(StubTextClient(), StubSearch()).read("510300.SH", TimeFrame.ONE_DAY)
 
         self.assertEqual(data.instrument.name, "沪深300ETF")
         self.assertEqual(data.instrument.decimal, 3)
 
     def test_search_failure_falls_back_to_code(self):
-        data = SinaMarketDataReader(StubTextClient(), FailingSearch()).read("1.600519", TimeFrame.ONE_DAY)
+        data = SinaMarketDataReader(StubTextClient(), FailingSearch()).read("600519.SH", TimeFrame.ONE_DAY)
 
         self.assertEqual((data.instrument.name, data.instrument.decimal), ("600519", 2))
 

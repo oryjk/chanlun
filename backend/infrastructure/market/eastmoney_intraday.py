@@ -3,7 +3,11 @@ from zoneinfo import ZoneInfo
 
 from ...domain.errors import MarketDataNotFound
 from ...domain.models import QuotePoint, QuoteSeries
+from ...domain.security import SecurityId
 from ..http.json_client import JsonHttpClient
+from .eastmoney_codes import to_eastmoney
+
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class EastmoneyIntradayReader:
@@ -15,10 +19,11 @@ class EastmoneyIntradayReader:
         self._http = http_client
 
     def read_intraday(self, secid: str) -> QuoteSeries:
+        canonical_secid = str(SecurityId.parse(secid))
         payload = self._http.get(
             self.URL,
             {
-                "secid": secid,
+                "secid": to_eastmoney(canonical_secid),
                 "ndays": 1,
                 "iscr": 0,
                 "fields1": self.FIELDS1,
@@ -28,15 +33,13 @@ class EastmoneyIntradayReader:
         data = payload.get("data")
         if not data:
             raise MarketDataNotFound("未找到该证券的当日分时数据")
-        market = str(data.get("market") or secid.split(".", 1)[0])
-        timezone = ZoneInfo("America/New_York" if market in {"105", "106", "107"} else "Asia/Shanghai")
         points = []
         for trend in data.get("trends") or []:
             try:
                 time_value, price_value = trend.split(",")[:2]
                 points.append(
                     QuotePoint(
-                        time=datetime.strptime(time_value, "%Y-%m-%d %H:%M").replace(tzinfo=timezone),
+                        time=datetime.strptime(time_value, "%Y-%m-%d %H:%M").replace(tzinfo=SHANGHAI_TZ),
                         price=float(price_value),
                     )
                 )
@@ -44,4 +47,4 @@ class EastmoneyIntradayReader:
                 continue
         if not points:
             raise MarketDataNotFound("该证券的当日分时数据不足")
-        return QuoteSeries(secid=secid, points=tuple(points))
+        return QuoteSeries(secid=canonical_secid, points=tuple(points))

@@ -68,7 +68,7 @@ def record_quote_sample(request: Request, sample: QuoteSampleRequest) -> QuoteSe
 @router.get("/api/chan", response_model=MarketSnapshotResponse)
 def get_chan_snapshot(
     request: Request,
-    secid: str = "1.600519",
+    secid: str = "600519.SH",
     timeframe: str = "30m",
     refresh: bool = False,
 ) -> MarketSnapshotResponse:

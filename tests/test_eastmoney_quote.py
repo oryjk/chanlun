@@ -37,7 +37,7 @@ class EastmoneyQuoteTests(unittest.TestCase):
             )
         )
 
-        quote = reader.read_quote("0.301162")
+        quote = reader.read_quote("301162.SZ")
 
         self.assertEqual(quote.latest, 33.77)
         self.assertEqual(quote.open, 33.64)
@@ -54,7 +54,7 @@ class EastmoneyQuoteTests(unittest.TestCase):
         reader = EastmoneyQuoteReader(StubHttpClient({"data": None}))
 
         with self.assertRaises(MarketDataNotFound):
-            reader.read_quote("0.301162")
+            reader.read_quote("301162.SZ")
 
 
 if __name__ == "__main__":

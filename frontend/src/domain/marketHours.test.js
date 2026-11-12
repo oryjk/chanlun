@@ -32,24 +32,10 @@ describe('A 股交易分钟轴', () => {
     expect(tradingMinuteToClock('1.600028', 150)).toBe('13:30')
     expect(tradingMinuteToClock('1.600028', 240)).toBe('15:00')
   })
-})
-
-describe('其他市场', () => {
-  test('港股午休 12:00–13:00', () => {
-    expect(getTradingDuration('116.00700')).toBe(330)
-    expect(getSessionBreaks('116.00700')).toEqual([150])
-    expect(tradingMinuteToClock('116.00700', 150)).toBe('12:00')
-  })
-
-  test('美股无午休', () => {
-    expect(getTradingDuration('105.AAPL')).toBe(390)
-    expect(getSessionBreaks('105.AAPL')).toEqual([])
-  })
-
   test('开市判断不变', () => {
-    expect(isMarketOpen('1.600028', shanghai(10, 0))).toBe(true)
-    expect(isMarketOpen('1.600028', shanghai(12, 0))).toBe(false)
-    expect(isMarketOpen('1.600028', shanghai(14, 59))).toBe(true)
-    expect(isMarketOpen('1.600028', shanghai(15, 0))).toBe(false)
+    expect(isMarketOpen('600028.SH', shanghai(10, 0))).toBe(true)
+    expect(isMarketOpen('600028.SH', shanghai(12, 0))).toBe(false)
+    expect(isMarketOpen('600028.SH', shanghai(14, 59))).toBe(true)
+    expect(isMarketOpen('600028.SH', shanghai(15, 0))).toBe(false)
   })
 })

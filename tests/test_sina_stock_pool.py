@@ -35,9 +35,9 @@ class SinaStockPoolTests(unittest.TestCase):
     def test_lists_sh_sz_equities_and_etfs_with_eastmoney_identities(self):
         stocks = SinaStockPoolReader(StubSinaClient(self.nodes())).list_all()
         self.assertEqual([stock.secid for stock in stocks],
-                         ["1.600000", "1.688981", "0.000001", "0.300750", "1.510300", "0.159915"])
-        self.assertEqual({stock.secid: stock.market for stock in stocks}["1.510300"], "ETF")
-        self.assertEqual({stock.secid: stock.market for stock in stocks}["0.000001"], "深A")
+                         ["600000.SH", "688981.SH", "000001.SZ", "300750.SZ", "510300.SH", "159915.SZ"])
+        self.assertEqual({stock.secid: stock.market for stock in stocks}["510300.SH"], "ETF")
+        self.assertEqual({stock.secid: stock.market for stock in stocks}["000001.SZ"], "深A")
 
     def test_paginates_beyond_one_page(self):
         many = rows(*((f"sh60{index:04d}", f"股票{index}") for index in range(250)))

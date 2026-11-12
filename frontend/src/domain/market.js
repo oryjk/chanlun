@@ -1,5 +1,7 @@
+import { exchangeOf } from './security.js'
+
 export const DEFAULT_STOCK = {
-  secid: '1.600519',
+  secid: '600519.SH',
   symbol: '600519',
   name: '贵州茅台',
   market: '沪A',
@@ -57,6 +59,5 @@ export function getCandleChange(candles, index, decimals = PRICE_DECIMALS) {
 export function isStarMarket(stock) {
   const symbol = String(stock?.symbol || '')
   const secid = String(stock?.secid || '')
-  const isShanghai = stock?.market === '沪A' || secid.startsWith('1.') || !stock?.market
-  return isShanghai && (symbol.startsWith('688') || symbol.startsWith('689'))
+  return exchangeOf(secid) === 'SH' && (symbol.startsWith('688') || symbol.startsWith('689'))
 }

@@ -1,7 +1,8 @@
-from ...domain.models import MarketSnapshot, TimeFrame, validate_security_id
+from ...domain.models import MarketSnapshot, TimeFrame
 from ...domain.services.market_analysis import MarketAnalysisPipeline
 from ..ports.clock import Clock
 from ..ports.readers import MarketDataReader
+from ..security_ids import normalize_security_id
 
 
 class GetMarketSnapshotQuery:
@@ -11,7 +12,7 @@ class GetMarketSnapshotQuery:
         self._clock = clock
 
     def execute(self, secid: str, timeframe: str, refresh: bool = False) -> MarketSnapshot:
-        normalized_secid = validate_security_id(secid)
+        normalized_secid = normalize_security_id(secid)
         period = TimeFrame.parse(timeframe)
         market_data = self._reader.read(normalized_secid, period, force_refresh=refresh)
         return self._pipeline.analyze(market_data, period, as_of=self._clock.now())

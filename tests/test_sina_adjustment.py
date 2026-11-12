@@ -37,7 +37,7 @@ class SinaForwardAdjustmentTests(unittest.TestCase):
 
     def test_candles_are_forward_adjusted_and_latest_price_is_unchanged(self):
         reader = SinaMarketDataReader(StubClient(), adjustment=SinaForwardAdjustment(StubClient()))
-        data = reader.read("1.600015", TimeFrame.ONE_DAY)
+        data = reader.read("600015.SH", TimeFrame.ONE_DAY)
         self.assertEqual([candle.close for candle in data.candles], [5.0, 6.8, 7.03])
         self.assertEqual(data.candles[1].high, 7.0)
         self.assertEqual(data.candles[1].volume, 200)
@@ -57,7 +57,7 @@ class SinaForwardAdjustmentTests(unittest.TestCase):
     def test_malformed_factors_are_unavailable_instead_of_silently_unadjusted(self):
         reader = SinaMarketDataReader(StubClient(), adjustment=SinaForwardAdjustment(StubClient("/* blocked */")))
         with self.assertRaises(MarketDataUnavailable):
-            reader.read("1.600015", TimeFrame.ONE_DAY)
+            reader.read("600015.SH", TimeFrame.ONE_DAY)
 
 
 if __name__ == "__main__":

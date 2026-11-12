@@ -6,8 +6,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ...application.ranking_jobs import RankingItem, RankingProgress, RankingView
-from ...domain.models import BuySellPoint, QuotePoint, RankingBoard, RankingEntry, SignalQuality, Stock, TimeFrame
+from ...application.security_ids import normalize_security_id
 from ...domain.analysis_version import LEGACY_ANALYSIS_VERSION
+from ...domain.errors import InvalidSecurityId
+from ...domain.models import BuySellPoint, QuotePoint, RankingBoard, RankingEntry, SignalQuality, Stock, TimeFrame
 
 
 def _json(value):
@@ -26,7 +28,9 @@ def _entry(data):
     if data is None:
         return None
     data = dict(data)
-    data["stock"] = Stock(**data["stock"])
+    stock_data = dict(data["stock"])
+    stock_data["secid"] = normalize_security_id(stock_data["secid"])
+    data["stock"] = Stock(**stock_data)
     for key in ("latest_point", "buy_point", "sell_point"):
         data[key] = _point(data.get(key))
     data["trend"] = tuple(
@@ -43,6 +47,18 @@ def _entry(data):
     return RankingEntry(**data)
 
 
+def _entries(items):
+    decoded = []
+    for item in items:
+        try:
+            entry = _entry(item)
+        except InvalidSecurityId:
+            continue
+        if entry is not None:
+            decoded.append(entry)
+    return tuple(decoded)
+
+
 def _board(payload):
     if not payload:
         return None
@@ -52,7 +68,7 @@ def _board(payload):
     data["timeframe"] = TimeFrame(data["timeframe"])
     data.setdefault("analysis_version", LEGACY_ANALYSIS_VERSION)
     for key in ("bullish", "bearish"):
-        data[key] = tuple(_entry(entry) for entry in data[key])
+        data[key] = _entries(data[key])
     return RankingBoard(**data)
 
 
@@ -103,7 +119,16 @@ class SqliteRankingStore:
         with self._connection(True) as connection:
             rows = connection.execute("SELECT payload FROM ranking_items WHERE trade_date=? AND analysis_version=?",
                                       (trade_date.isoformat(), analysis_version)).fetchall()
-        return tuple(RankingItem(data["secid"], _entry(data["entry"]), data["error"]) for data in (json.loads(row[0]) for row in rows))
+        items = []
+        for row in rows:
+            data = json.loads(row[0])
+            try:
+                secid = normalize_security_id(data["secid"])
+                entry = _entry(data["entry"])
+            except InvalidSecurityId:
+                continue
+            items.append(RankingItem(secid, entry, data["error"]))
+        return tuple(items)
 
     def claim(self, trade_date, owner, now, lease_seconds, *, analysis_version):
         with self._connection() as connection:

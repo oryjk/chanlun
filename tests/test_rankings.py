@@ -80,10 +80,10 @@ class RankingTests(unittest.TestCase):
         stocks = EastmoneyStockPoolReader(StubHttpClient(items)).list_liquid(40)
 
         self.assertEqual(stocks, [
-            Stock("0.000001", "000001", "平安银行", "深A"),
-            Stock("0.159915", "159915", "创业板ETF", "ETF"),
-            Stock("1.600519", "600519", "贵州茅台", "沪A"),
-            Stock("1.510300", "510300", "沪深300ETF", "ETF"),
+            Stock("000001.SZ", "000001", "平安银行", "深A"),
+            Stock("159915.SZ", "159915", "创业板ETF", "ETF"),
+            Stock("600519.SH", "600519", "贵州茅台", "沪A"),
+            Stock("510300.SH", "510300", "沪深300ETF", "ETF"),
         ])
 
     def test_stock_pool_rejects_missing_and_unsupported_markets(self):
@@ -99,7 +99,7 @@ class RankingTests(unittest.TestCase):
             for index in range(1, 11)
             for prefix, market in (("600", 1), ("000", 0), ("510", 1), ("159", 0))
         ]
-        expected_secids = [f"{item['f13']}.{item['f12']}" for item in items]
+        expected_secids = [f"{item['f12']}.{'SH' if item['f13'] == 1 else 'SZ'}" for item in items]
         market_data = MarketDataStub()
 
         with tempfile.TemporaryDirectory() as directory:
@@ -143,9 +143,9 @@ class RankingTests(unittest.TestCase):
     def test_stock_pool_is_converted_to_domain_stocks(self):
         stocks = EastmoneyStockPoolReader(StubHttpClient()).list_liquid(2)
 
-        self.assertEqual(stocks[0].secid, "1.601939")
+        self.assertEqual(stocks[0].secid, "601939.SH")
         self.assertEqual(stocks[0].market, "沪A")
-        self.assertEqual(stocks[1].secid, "1.510300")
+        self.assertEqual(stocks[1].secid, "510300.SH")
         self.assertEqual(stocks[1].market, "ETF")
 
     def test_rankings_sort_by_strength_and_filter_neutral(self):

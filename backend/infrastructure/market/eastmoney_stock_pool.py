@@ -1,6 +1,7 @@
 from ...domain.errors import MarketDataNotFound, MarketDataUnavailable
 from ...domain.models import Stock
 from ..http.json_client import JsonHttpClient
+from .eastmoney_codes import from_eastmoney
 
 
 class EastmoneyStockPoolReader:
@@ -47,12 +48,15 @@ class EastmoneyStockPoolReader:
                 continue
             if len(code) != 6 or not code.isdigit():
                 raise MarketDataUnavailable("证券清单包含无效代码，请稍后重试")
+            secid = from_eastmoney(f"{market}.{code}")
+            if secid is None:
+                continue
             # MARKETS explicitly selects the four A-share boards and four ETF product groups.
             # Code validation excludes securities outside those exchange board conventions.
             equity = (market == "0" and code.startswith(("0", "3"))) or (market == "1" and code.startswith("6"))
             etf = ((market == "0" and code.startswith("15")) or (market == "1" and code.startswith("5"))) and not any(term in name.upper() for term in ("LOF", "REIT"))
             if equity or etf:
-                stocks.append(Stock(f"{market}.{code}", code, name, "ETF" if etf else "沪A" if market == "1" else "深A"))
+                stocks.append(Stock(secid, code, name, "ETF" if etf else "沪A" if market == "1" else "深A"))
         if not stocks:
             raise MarketDataNotFound("暂未获取到沪深股票和 ETF 清单")
         return tuple(stocks)
@@ -77,12 +81,13 @@ class EastmoneyStockPoolReader:
         for item in items:
             code = str(item.get("f12") or "")
             market = str(item.get("f13", ""))
-            if not code or market not in {"0", "1"}:
+            secid = from_eastmoney(f"{market}.{code}")
+            if secid is None:
                 continue
             is_etf = code.startswith(("5", "15"))
             stocks.append(
                 Stock(
-                    secid=f"{market}.{code}",
+                    secid=secid,
                     symbol=code,
                     name=item.get("f14") or code,
                     market="ETF" if is_etf else "沪A" if market == "1" else "深A",

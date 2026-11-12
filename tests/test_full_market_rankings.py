@@ -28,7 +28,7 @@ class FullMarketTests(unittest.TestCase):
         client = PageClient({1: rows[:100], 2: rows[100:]}, 101)
         stocks = EastmoneyStockPoolReader(client).list_all()
         self.assertEqual(len(stocks), 101)
-        self.assertEqual(stocks[-1].secid, "0.000101")
+        self.assertEqual(stocks[-1].secid, "000101.SZ")
         self.assertEqual([call["pn"] for call in client.calls], [1, 2])
 
     def test_duplicate_or_missing_page_cannot_be_published_as_complete(self):
@@ -47,7 +47,7 @@ class FullMarketTests(unittest.TestCase):
             {"f12": "00700", "f13": 116, "f14": "腾讯控股"},
         ]
         stocks = EastmoneyStockPoolReader(PageClient({1: rows}, 6)).list_all()
-        self.assertEqual([stock.secid for stock in stocks], ["1.600519", "0.159915", "1.513100"])
+        self.assertEqual([stock.secid for stock in stocks], ["600519.SH", "159915.SZ", "513100.SH"])
         self.assertEqual(stocks[-1].market, "ETF")
 
     def test_malformed_market_or_mainland_code_is_not_silently_excluded(self):

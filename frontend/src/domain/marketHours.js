@@ -1,15 +1,11 @@
-// 各市场交易时段（当地时间，自零点起的分钟数）
-const US_MARKETS = ['105', '106', '107']
-const SESSIONS = {
-  us: { timeZone: 'America/New_York', sessions: [[570, 960]] },
-  hk: { timeZone: 'Asia/Hong_Kong', sessions: [[570, 720], [780, 960]] },
-  cn: { timeZone: 'Asia/Shanghai', sessions: [[570, 690], [780, 900]] },
+// A 股交易时段（当地时间，自零点起的分钟数）
+const CN_SESSION = {
+  timeZone: 'Asia/Shanghai',
+  sessions: [[570, 690], [780, 900]],
 }
 
-function getMarketSession(secid) {
-  const market = secid.split('.')[0]
-  if (US_MARKETS.includes(market)) return SESSIONS.us
-  return market === '116' ? SESSIONS.hk : SESSIONS.cn
+function getMarketSession() {
+  return CN_SESSION
 }
 
 function zonedParts(date, timeZone) {

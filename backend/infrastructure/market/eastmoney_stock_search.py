@@ -1,11 +1,12 @@
 from ...domain.models import Stock
 from ..http.json_client import JsonHttpClient
+from .eastmoney_codes import from_eastmoney
 
 
 class EastmoneyStockSearchReader:
     URL = "https://searchapi.eastmoney.com/api/suggest/get"
     TOKEN = "D43BF722C8E33BDC906FB84D85E326E8"
-    SUPPORTED_CLASSES = {"AStock", "HK", "UsStock", "Fund"}
+    SUPPORTED_CLASSES = {"AStock", "Fund"}
 
     def __init__(self, http_client: JsonHttpClient):
         self._http = http_client
@@ -18,12 +19,15 @@ class EastmoneyStockSearchReader:
         items = (payload.get("QuotationCodeTable") or {}).get("Data") or []
         results = []
         for item in items:
-            if not self._is_supported(item) or not item.get("QuoteID"):
+            if not self._is_supported(item):
+                continue
+            secid = from_eastmoney(item.get("QuoteID") or "")
+            if secid is None:
                 continue
             is_etf = item.get("Classify") == "Fund"
             results.append(
                 Stock(
-                    secid=item["QuoteID"],
+                    secid=secid,
                     symbol=item.get("Code") or item.get("UnifiedCode"),
                     name=item.get("Name") or item.get("Code"),
                     market="ETF" if is_etf else item.get("SecurityTypeName") or item.get("Classify"),

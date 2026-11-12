@@ -1,24 +1,24 @@
 import { useEffect, useState } from 'react'
 import { DEFAULT_STOCK } from '../../domain/market.js'
+import { codeOf, normalizeSecid } from '../../domain/security.js'
 import { VIEW_TABS } from '../../domain/timeframes.js'
 
 const DEFAULT_TIMEFRAME = '30m'
-const SECID_PATTERN = /^\d{1,3}\.[A-Za-z0-9.-]{1,24}$/
 
 export function readMarketRoute(search) {
   const params = new URLSearchParams(search)
-  const secid = params.get('secid') || ''
+  const secid = normalizeSecid(params.get('secid'))
   const requestedTimeframe = params.get('timeframe') || ''
   const timeframe = VIEW_TABS.some((item) => item.value === requestedTimeframe)
     ? requestedTimeframe
     : DEFAULT_TIMEFRAME
   const view = params.get('view') === 'rankings' ? 'rankings' : 'market'
 
-  if (!SECID_PATTERN.test(secid)) {
+  if (!secid) {
     return { stock: DEFAULT_STOCK, timeframe, view, resolveStock: false }
   }
 
-  const symbol = secid.split('.')[1]
+  const symbol = codeOf(secid)
   return {
     stock: { secid, symbol, name: symbol, market: '' },
     timeframe,

@@ -76,12 +76,12 @@ class RankingStoreTests(unittest.TestCase):
         from backend.domain.models import BuySellPoint, RankingEntry, SignalQuality, Stock
         self.assertTrue(self.store.claim(DAY, 'new', NOW, 60, analysis_version=ANALYSIS_VERSION))
         point = BuySellPoint(3, 'buy', 2, 30, NOW, 10, True, 'test', invalidation_price=9)
-        entry = RankingEntry(0, Stock('1.600001', '600001', 'test', '沪A'), 'bullish', 3,
+        entry = RankingEntry(0, Stock('600001.SH', '600001', 'test', '沪A'), 'bullish', 3,
                              10, 1, 9, latest_point=point,
                              signal_quality=SignalQuality('invalidated', 9, history_status='invalidated',
                                 first_reference_crossed_at=NOW, first_reference_crossed_close=8.8,
                                 history_checked_through=NOW, reasons=('test',)))
-        item = RankingItem('1.600001', entry)
+        item = RankingItem('600001.SH', entry)
         progress = RankingProgress('running', DAY, 1, 1, 1, 0, NOW, analysis_version=ANALYSIS_VERSION)
         self.store.record(DAY, item, progress, 'new', NOW, 60)
         self.assertEqual(self.store.read_items(DAY, analysis_version=1), ())

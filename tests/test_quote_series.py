@@ -21,7 +21,7 @@ class StubHttpClient:
 
 class QuoteSeriesTests(unittest.TestCase):
     def test_intraday_response_is_converted(self):
-        series = EastmoneyIntradayReader(StubHttpClient()).read_intraday("0.301162")
+        series = EastmoneyIntradayReader(StubHttpClient()).read_intraday("301162.SZ")
 
         self.assertEqual(len(series.points), 2)
         self.assertEqual(series.points[0].price, 33.64)

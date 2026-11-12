@@ -1,5 +1,6 @@
-from ...domain.models import RealtimeQuote, validate_security_id
+from ...domain.models import RealtimeQuote
 from ..ports.readers import QuoteReader
+from ..security_ids import normalize_security_id
 
 
 class GetQuoteQuery:
@@ -7,4 +8,4 @@ class GetQuoteQuery:
         self._reader = reader
 
     def execute(self, secid: str) -> RealtimeQuote:
-        return self._reader.read_quote(validate_security_id(secid))
+        return self._reader.read_quote(normalize_security_id(secid))

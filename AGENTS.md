@@ -20,9 +20,11 @@
 backend/
 ├── domain/
 │   ├── models.py              # 不可变领域模型、周期和值校验
+│   ├── security.py            # 证券标识值对象 SecurityId 与交易所枚举 Exchange（SH/SZ/BJ）
 │   ├── errors.py              # 与 HTTP 状态码无关的领域异常
 │   └── services/              # 缠论分析、市场分析链路、MACD、背驰与买卖点、信号质量证据、多级别联立、结构判断、分时序列合并等纯领域算法
 ├── application/
+│   ├── security_ids.py        # 证券标识规范化（兼容旧格式输入并转为规范格式）与持久化旧文件名映射
 │   ├── ranking_jobs.py        # 榜单后台任务状态（进度、检查点条目、读取视图）
 │   ├── ports/
 │   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索、全市场清单、收盘日、榜单快照、小程序外链）
@@ -40,6 +42,12 @@ backend/
 ├── interfaces/api/            # FastAPI 路由（行情 routes.py、登录 auth_routes.py）、Pydantic DTO、异常映射
 └── app/                       # 组合根、环境配置 settings.py、应用启动与收盘榜单后台生命周期
 ```
+
+### 证券标识约定
+
+- 系统统一使用与数据源无关的规范格式 `代码.交易所`（正则 `^[0-9A-Z]{1,10}\.(SH|SZ|BJ)$`，例如 `600519.SH`、`000001.SZ`、`920118.BJ`）。领域层 `domain/security.py` 的 `SecurityId` 只接受规范格式，所有 API 输出的 `secid` 一律为规范格式。
+- 用例入口统一通过 `application/security_ids.py` 的 `normalize_security_id` 规范化输入：去空白并转大写，同时长期兼容旧公开格式（`1.` 映射为 `SH`；`0.` 时代码以 `4`、`8`、`9` 开头映射为 `BJ`，其余映射为 `SZ`）。本期仅支持沪深北 A 股及境内 ETF，旧港股（`116.`）与美股（`105.`、`106.`、`107.`）输入返回 400「暂不支持该市场」，其余非法标识返回 400「证券标识格式不正确」。
+- 东方财富（`1.600519`）和新浪（`sh600519`）等数据源专有格式只存在于 `infrastructure/market/` 适配器内部，不得泄漏到领域层、应用层、API 或前端。
 
 ### 登录与鉴权约定
 
@@ -60,14 +68,14 @@ backend/
 - 自结构端点起核对现有已完成 K 线，任一收盘严格越过固定参考即标记失效并记录首次越界日期、收盘价，价格恢复也不重新启用；盘中高低价触及另列事实，等于边界和未收盘越界不计。缺少可核对区间或旧快照未核查时只能列观察。MACD、量比仍是待验证证据，不启用未经回测的硬过滤或成功概率；参考越界事实不得冒充实盘识别/确认时间。
 - 买卖点是规则化的结构识别，界面必须保留"不构成买卖建议"的提示。
 
-`backend/app/container.py` 返回 `QueryServices` 与 `CommandServices` 两组服务，路由分别从 `app.state.queries` 和 `app.state.commands` 取用。报价采样按 `var/quotes/{secid}-{YYYYMMDD}.json` 按日存储，写入时清理往日文件；`var/quotes/` 是运行时数据，不入库。
+`backend/app/container.py` 的 `build_application(settings)` 返回 `Application`（queries、commands、ranking_worker），路由分别从 `app.state.queries` 和 `app.state.commands` 取用。报价采样按 `var/quotes/{secid}-{YYYYMMDD}.json` 按日存储，写入时清理往日文件；`var/quotes/` 是运行时数据，不入库。
 
 ### 后端读写分离
 
 - Query 只能读取，不得产生数据库写入、修改配置或其他业务副作用。
 - 新增写入功能时建立 `application/commands` 和 `application/ports/writers.py`，由 Command 调用 Writer。
 - Reader 与 Writer 分开定义，不创建一个同时承担所有读写的巨型 Repository。
-- 业务写入包括实时报价采样（`RecordQuoteSampleCommand` → `QuoteWriter`）、消费一次性 code 的登录，以及后台构建收盘榜单（`BuildDailyRankingsCommand` → `RankingWriter`）。不得为了形式完整创建空写库或无意义 Command。
+- 业务写入包括实时报价采样（`RecordQuoteSampleCommand` → `QuoteWriter`）、消费一次性 code 的登录，以及后台构建收盘榜单（`BuildDailyRankingsCommand` → `RankingLease` / `RankingCheckpointWriter` / `RankingPublisher`）。不得为了形式完整创建空写库或无意义 Command。
 - 缓存是读取适配器的装饰器；强制刷新只能绕过读取缓存，不得被当作业务写入。
 - 新增数据源时实现对应端口，在 `backend/app/container.py` 注册；领域算法和 API 路由不应跟随修改。
 
@@ -86,7 +94,7 @@ backend/
 
 ```text
 frontend/src/
-├── domain/                    # 纯领域定义、选择器、交易时段和分时序列合并等业务规则
+├── domain/                    # 纯领域定义、证券标识规范化、选择器、交易时段和分时序列合并等业务规则
 ├── application/               # 股票搜索、快照与报价读取等查询用例，报价采样写入用例，会话查询、code 登录与登录引导用例
 ├── infrastructure/
 │   ├── api/                   # fetch、HTTP 错误、DTO 转换和 Gateway（行情、登录）

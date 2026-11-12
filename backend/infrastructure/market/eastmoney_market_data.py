@@ -3,7 +3,11 @@ from zoneinfo import ZoneInfo
 
 from ...domain.errors import MarketDataNotFound
 from ...domain.models import Candle, Instrument, MarketData, TimeFrame
+from ...domain.security import SecurityId
 from ..http.json_client import JsonHttpClient
+from .eastmoney_codes import to_eastmoney
+
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class EastmoneyMarketDataReader:
@@ -23,7 +27,7 @@ class EastmoneyMarketDataReader:
         payload = self._http.get(
             self.URL,
             {
-                "secid": secid,
+                "secid": to_eastmoney(secid),
                 "klt": self.PERIODS[timeframe],
                 "fqt": 1,
                 "lmt": self.BAR_COUNT,
@@ -38,11 +42,11 @@ class EastmoneyMarketDataReader:
         return self._to_market_data(secid, data)
 
     def _to_market_data(self, secid: str, data: dict) -> MarketData:
-        market = str(data.get("market") or secid.split(".", 1)[0])
-        timezone = ZoneInfo("America/New_York" if market in {"105", "106", "107"} else "Asia/Shanghai")
+        sid = SecurityId.parse(secid)
+        canonical_secid = str(sid)
         candles = []
         for kline in data.get("klines") or []:
-            candle = self._to_candle(kline, timezone)
+            candle = self._to_candle(kline, SHANGHAI_TZ)
             if candle is not None:
                 candles.append(candle)
 
@@ -51,11 +55,11 @@ class EastmoneyMarketDataReader:
             raise MarketDataNotFound("该证券的有效行情不足，无法进行分析")
 
         instrument = Instrument(
-            secid=secid,
-            symbol=data.get("code") or secid.split(".", 1)[1],
-            name=data.get("name") or data.get("code") or secid,
+            secid=canonical_secid,
+            symbol=data.get("code") or sid.code,
+            name=data.get("name") or data.get("code") or canonical_secid,
             decimal=data.get("decimal") or 2,
-            currency={"0": "CNY", "1": "CNY", "116": "HKD"}.get(market, "USD" if market in {"105", "106", "107"} else None),
+            currency="CNY",
             exchange=None,
             data_source="东方财富 · 公开行情",
         )

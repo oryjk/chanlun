@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from ...domain.models import QuoteSeries, validate_security_id
+from ...domain.models import QuoteSeries
 from ..ports.writers import QuoteWriter
+from ..security_ids import normalize_security_id
 
 
 class RecordQuoteSampleCommand:
@@ -9,4 +10,4 @@ class RecordQuoteSampleCommand:
         self._writer = writer
 
     def execute(self, secid: str, time: datetime, price: float) -> QuoteSeries:
-        return self._writer.append(validate_security_id(secid), time, price)
+        return self._writer.append(normalize_security_id(secid), time, price)
