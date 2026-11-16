@@ -27,6 +27,7 @@ enum class Timeframe(val rawValue: String, val label: String) {
 
 enum class RootTab(val rawValue: String, val label: String) {
     MARKET("market", "行情"),
+    TRACKING("tracking", "跟踪"),
     RANKING("ranking", "榜单"),
     ACCOUNT("account", "菜单");
 
@@ -35,6 +36,48 @@ enum class RootTab(val rawValue: String, val label: String) {
             entries.firstOrNull { it.rawValue == raw } ?: MARKET
     }
 }
+
+enum class AssetCategory(val rawValue: String, val label: String) {
+    STOCK("stock", "股票"),
+    ETF("etf", "ETF");
+
+    companion object {
+        fun fromRaw(raw: String?): AssetCategory =
+            entries.firstOrNull { it.rawValue == raw } ?: STOCK
+    }
+}
+
+enum class AssetSortField(val rawValue: String, val label: String) {
+    AMOUNT("amount", "成交额"),
+    CHANGE_PERCENT("change_percent", "涨跌幅"),
+    LATEST("latest", "最新价");
+
+    companion object {
+        fun fromRaw(raw: String?): AssetSortField =
+            entries.firstOrNull { it.rawValue == raw } ?: AMOUNT
+    }
+}
+
+data class MarketAssetItem(
+    val stock: Stock,
+    val latest: Double,
+    val change: Double,
+    val changePercent: Double,
+    val open: Double,
+    val high: Double,
+    val low: Double,
+    val previousClose: Double,
+    val volume: Double,
+    val amount: Double,
+    val sparkline: List<Double> = emptyList(),
+    val signalLabel: String? = null,
+)
+
+data class MarketAssetList(
+    val category: AssetCategory,
+    val asOfDate: String?,
+    val items: List<MarketAssetItem>,
+)
 
 data class Candle(
     val time: Instant,

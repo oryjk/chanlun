@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from .get_current_user import GetCurrentUserQuery
+from .get_market_assets import GetMarketAssetsQuery
 from .get_market_snapshot import GetMarketSnapshotQuery
 from .get_mini_program_link import GetMiniProgramLinkQuery
 from .get_quote import GetQuoteQuery
@@ -20,3 +21,4 @@ class QueryServices:
     get_signal_confluence: GetSignalConfluenceQuery
     get_current_user: GetCurrentUserQuery
     get_mini_program_link: GetMiniProgramLinkQuery
+    get_market_assets: GetMarketAssetsQuery | None = None

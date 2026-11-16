@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ...application.commands.services import CommandServices
 from ...application.queries.services import QueryServices
 from ...domain.models import TimeFrame
 from .schemas import (
+    MarketAssetListResponse,
     MarketSnapshotResponse,
     QuoteSampleRequest,
     QuoteSeriesResponse,
@@ -80,3 +81,22 @@ def get_chan_snapshot(
 def get_signal_confluence(request: Request, secid: str) -> SignalConfluenceResponse:
     confluence = queries(request).get_signal_confluence.execute(secid)
     return SignalConfluenceResponse.model_validate(confluence)
+
+
+@router.get("/api/market/assets", response_model=MarketAssetListResponse)
+def get_market_assets(
+    request: Request,
+    category: str = "stock",
+    sort: str = "amount",
+    order: str = "desc",
+    limit: int = Query(default=60, ge=1, le=200),
+) -> MarketAssetListResponse:
+    query = queries(request).get_market_assets
+    if query is None:
+        raise HTTPException(503, "资产清单服务尚未配置")
+    assets = query.execute(category=category, sort=sort, order=order, limit=limit)
+    return MarketAssetListResponse(
+        category=assets.category.value,
+        as_of_date=assets.as_of_date,
+        items=assets.items,
+    )

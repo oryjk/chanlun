@@ -5,6 +5,7 @@ import cn.oryjk.changuan.application.EnvironmentStore
 import cn.oryjk.changuan.application.RouteStore
 import cn.oryjk.changuan.application.SessionStore
 import cn.oryjk.changuan.application.ThemePreferenceStore
+import cn.oryjk.changuan.application.TrackingPreferenceStore
 import cn.oryjk.changuan.domain.AppThemeMode
 import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.domain.RootTab
@@ -139,5 +140,43 @@ class SharedPreferencesRouteStore(
         private const val KEY_MARKET = "market"
         private const val KEY_TIMEFRAME = "timeframe"
         private const val KEY_TAB = "tab"
+    }
+}
+
+class SharedPreferencesTrackingPreferenceStore(
+    context: Context,
+    prefsName: String,
+) : TrackingPreferenceStore {
+    private val prefs = context.applicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+
+    override fun pinnedSecids(userId: String): Set<String> =
+        prefs.getString("pinned_$userId", null)
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            .orEmpty()
+
+    override fun savePinnedSecids(userId: String, secids: Set<String>) {
+        prefs.edit().putString("pinned_$userId", secids.joinToString(",")).apply()
+    }
+
+    override fun customOrder(userId: String): List<String> =
+        prefs.getString("order_$userId", null)
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+
+    override fun saveCustomOrder(userId: String, order: List<String>) {
+        prefs.edit().putString("order_$userId", order.joinToString(",")).apply()
+    }
+
+    companion object {
+        fun prefsNameFor(environment: BackendEnvironment): String = when (environment) {
+            BackendEnvironment.Development -> "changuan_tracking_prefs"
+            BackendEnvironment.DevelopmentProxy -> "changuan_tracking_prefs_proxy"
+            BackendEnvironment.Production -> "changuan_tracking_prefs_prod"
+        }
     }
 }

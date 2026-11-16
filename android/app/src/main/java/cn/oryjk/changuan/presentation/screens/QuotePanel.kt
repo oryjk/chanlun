@@ -1,10 +1,11 @@
 package cn.oryjk.changuan.presentation.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,7 +19,6 @@ import cn.oryjk.changuan.domain.QuotePoint
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.presentation.LocalChanPalette
 import cn.oryjk.changuan.presentation.charts.RealtimeChartCanvas
-import cn.oryjk.changuan.presentation.designsystem.ClarityCard
 import cn.oryjk.changuan.presentation.designsystem.SectionTitle
 import cn.oryjk.changuan.presentation.designsystem.StarkBadgeTag
 import cn.oryjk.changuan.presentation.designsystem.tabular
@@ -34,9 +34,10 @@ fun QuotePanel(
     val decimals = stock.decimals
     val session = MarketTime.session(stock)
 
-    ClarityCard(
-        modifier = modifier,
-        contentPadding = PaddingValues(14.dp),
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         SectionTitle(
@@ -64,7 +65,7 @@ fun QuotePanel(
                 points = points,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(228.dp),
+                    .height(236.dp),
             )
             if (points.size < 2) {
                 Text(

@@ -13,14 +13,18 @@ import cn.oryjk.changuan.application.InMemoryThemePreferenceStore
 import cn.oryjk.changuan.application.MarketUseCases
 import cn.oryjk.changuan.application.RouteStore
 import cn.oryjk.changuan.application.ThemePreferenceStore
+import cn.oryjk.changuan.application.TrackingUseCases
 import cn.oryjk.changuan.domain.ApkInstallState
 import cn.oryjk.changuan.domain.AppThemeMode
 import cn.oryjk.changuan.domain.AppUpdateInfo
 import cn.oryjk.changuan.domain.AppUser
+import cn.oryjk.changuan.domain.AssetCategory
+import cn.oryjk.changuan.domain.AssetSortField
 import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.domain.ChartLayers
 import cn.oryjk.changuan.domain.DefaultStocks
 import cn.oryjk.changuan.domain.DownloadedApk
+import cn.oryjk.changuan.domain.MarketAssetItem
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketTime
@@ -35,6 +39,8 @@ import cn.oryjk.changuan.domain.SignalConfluence
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.domain.SystemInstallResult
 import cn.oryjk.changuan.domain.Timeframe
+import cn.oryjk.changuan.domain.TrackedAsset
+import cn.oryjk.changuan.domain.TrackingSortField
 import cn.oryjk.changuan.domain.UpdateDownloadState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -63,6 +69,26 @@ data class AppUiState(
     val stock: Stock = DefaultStocks.KWEICHOW_MOUTAI,
     val timeframe: Timeframe = Timeframe.DAILY,
     val tab: RootTab = RootTab.MARKET,
+    val detailSheetOpen: Boolean = false,
+    val assetCategory: AssetCategory = AssetCategory.STOCK,
+    val assetSortField: AssetSortField = AssetSortField.AMOUNT,
+    val assetSortDescending: Boolean = true,
+    val stockAssets: List<MarketAssetItem> = emptyList(),
+    val etfAssets: List<MarketAssetItem> = emptyList(),
+    val assetsAsOfDate: String? = null,
+    val assetsLoading: Boolean = false,
+    val assetsRefreshing: Boolean = false,
+    val assetsError: String = "",
+    val trackings: List<TrackedAsset> = emptyList(),
+    val trackingAsOfDate: String = "",
+    val trackingLoading: Boolean = false,
+    val trackingRefreshing: Boolean = false,
+    val trackingError: String = "",
+    val pendingTrackSecids: Set<String> = emptySet(),
+    val trackingSortField: TrackingSortField? = TrackingSortField.CUMULATIVE_PROFIT,
+    val trackingSortDescending: Boolean = true,
+    val pinnedSecids: Set<String> = emptySet(),
+    val customTrackingOrder: List<String> = emptyList(),
     val environment: BackendEnvironment = BackendEnvironment.DEFAULT,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val snapshot: MarketSnapshot? = null,
@@ -131,6 +157,8 @@ class AppViewModel(
         get() = activeServices.market
     val auth: AuthUseCases
         get() = activeServices.auth
+    val tracking: TrackingUseCases?
+        get() = activeServices.tracking
 
     private val _state = MutableStateFlow(
         AppUiState(
@@ -146,6 +174,8 @@ class AppViewModel(
         private set
     private var generation: Int = 0
     private var loadJob: Job? = null
+    private var assetsJob: Job? = null
+    private var trackingJob: Job? = null
     private var boardJob: Job? = null
     private var searchJob: Job? = null
     private var cooldownJob: Job? = null
@@ -153,6 +183,8 @@ class AppViewModel(
     private var updateDownloadJob: Job? = null
     private var updateInstallJob: Job? = null
     private var historyJob: Job? = null
+    private var assetsGeneration: Long = 0L
+    private var trackingGeneration: Long = 0L
     private var downloadGeneration: Long = 0L
     private var historyGeneration: Long = 0L
     private val dismissedVersionCodes = mutableSetOf<Int>()
@@ -178,7 +210,11 @@ class AppViewModel(
             scope.launch { restoreSession() }
         } else {
             generation += 1
+            assetsGeneration += 1
+            trackingGeneration += 1
             loadJob?.cancel()
+            assetsJob?.cancel()
+            trackingJob?.cancel()
             boardJob?.cancel()
             updateLoopJob?.cancel()
             _state.update {
@@ -186,6 +222,10 @@ class AppViewModel(
                     loading = false,
                     refreshing = false,
                     confluenceLoading = false,
+                    assetsLoading = false,
+                    assetsRefreshing = false,
+                    trackingLoading = false,
+                    trackingRefreshing = false,
                     boardLoading = false,
                     boardRefreshing = false,
                 )
@@ -207,8 +247,12 @@ class AppViewModel(
             return
         }
         generation += 1
+        assetsGeneration += 1
+        trackingGeneration += 1
         authEpoch += 1
         loadJob?.cancel()
+        assetsJob?.cancel()
+        trackingJob?.cancel()
         boardJob?.cancel()
         searchJob?.cancel()
         cooldownJob?.cancel()
@@ -216,10 +260,25 @@ class AppViewModel(
         _state.update {
             it.copy(
                 environment = environment,
+                detailSheetOpen = false,
                 snapshot = null,
                 confluence = null,
                 quote = null,
                 series = emptyList(),
+                stockAssets = emptyList(),
+                etfAssets = emptyList(),
+                assetsAsOfDate = null,
+                assetsLoading = false,
+                assetsRefreshing = false,
+                assetsError = "",
+                trackings = emptyList(),
+                trackingAsOfDate = "",
+                trackingLoading = false,
+                trackingRefreshing = false,
+                trackingError = "",
+                pendingTrackSecids = emptySet(),
+                pinnedSecids = emptySet(),
+                customTrackingOrder = emptyList(),
                 board = null,
                 user = null,
                 loading = false,
@@ -474,13 +533,31 @@ class AppViewModel(
         reload()
     }
 
-    fun selectStock(stock: Stock, forceDaily: Boolean = false) {
+    fun selectAssetCategory(category: AssetCategory) {
+        if (_state.value.assetCategory == category) return
+        _state.update { it.copy(assetCategory = category, assetsError = "") }
+        reloadAssets(forceRefresh = false)
+    }
+
+    fun toggleAssetSort(field: AssetSortField) {
+        val current = _state.value
+        val nextDescending = if (current.assetSortField == field) !current.assetSortDescending else true
+        _state.update {
+            it.copy(
+                assetSortField = field,
+                assetSortDescending = nextDescending,
+            )
+        }
+        reloadAssets(forceRefresh = true)
+    }
+
+    fun openAssetDetail(stock: Stock, forceDaily: Boolean = false) {
         val nextTimeframe = if (forceDaily) Timeframe.DAILY else _state.value.timeframe
         _state.update {
             it.copy(
                 stock = stock,
                 timeframe = nextTimeframe,
-                tab = RootTab.MARKET,
+                detailSheetOpen = true,
                 snapshot = null,
                 quote = null,
                 series = emptyList(),
@@ -489,8 +566,26 @@ class AppViewModel(
                 confluenceError = "",
             )
         }
-        routes.save(stock, nextTimeframe, RootTab.MARKET)
+        routes.save(stock, nextTimeframe, _state.value.tab)
         reload()
+    }
+
+    fun closeAssetDetail() {
+        if (!_state.value.detailSheetOpen) return
+        generation += 1
+        loadJob?.cancel()
+        _state.update {
+            it.copy(
+                detailSheetOpen = false,
+                loading = false,
+                refreshing = false,
+                confluenceLoading = false,
+            )
+        }
+    }
+
+    fun selectStock(stock: Stock, forceDaily: Boolean = false) {
+        openAssetDetail(stock = stock, forceDaily = forceDaily)
     }
 
     fun changeTimeframe(nextTimeframe: Timeframe) {
@@ -530,13 +625,240 @@ class AppViewModel(
         }
         if (!active) return
         val currentState = _state.value
-        if (currentState.tab == RootTab.RANKING) {
-            startRankings(currentGen, showPullIndicator = refresh)
+        if (currentState.detailSheetOpen) {
+            loadDetail(
+                stock = currentState.stock,
+                period = currentState.timeframe,
+                currentGen = currentGen,
+                refresh = refresh,
+            )
             return
         }
-        if (currentState.tab != RootTab.MARKET) return
-        val stock = currentState.stock
-        val period = currentState.timeframe
+        when (currentState.tab) {
+            RootTab.MARKET -> reloadAssets(forceRefresh = refresh)
+            RootTab.TRACKING -> reloadTrackings(forceRefresh = refresh)
+            RootTab.RANKING -> startRankings(currentGen, showPullIndicator = refresh)
+            RootTab.ACCOUNT -> Unit
+        }
+    }
+
+    fun reloadAssets(forceRefresh: Boolean = true) {
+        if (!active) return
+        val current = _state.value
+        val category = current.assetCategory
+        val existingList = if (category == AssetCategory.STOCK) current.stockAssets else current.etfAssets
+        if (!forceRefresh && existingList.isNotEmpty()) return
+        val gen = ++assetsGeneration
+        assetsJob?.cancel()
+        _state.update {
+            it.copy(
+                assetsError = "",
+                assetsLoading = existingList.isEmpty(),
+                assetsRefreshing = forceRefresh && existingList.isNotEmpty(),
+            )
+        }
+        assetsJob = scope.launch {
+            runCatching {
+                market.reader.assets(
+                    category = category,
+                    sortField = _state.value.assetSortField,
+                    descending = _state.value.assetSortDescending,
+                    limit = 80,
+                )
+            }.onSuccess { result ->
+                if (!active || gen != assetsGeneration) return@onSuccess
+                _state.update { state ->
+                    when (result.category) {
+                        AssetCategory.STOCK -> state.copy(
+                            stockAssets = result.items,
+                            assetsAsOfDate = result.asOfDate ?: state.assetsAsOfDate,
+                            assetsLoading = false,
+                            assetsRefreshing = false,
+                            assetsError = "",
+                        )
+                        AssetCategory.ETF -> state.copy(
+                            etfAssets = result.items,
+                            assetsAsOfDate = result.asOfDate ?: state.assetsAsOfDate,
+                            assetsLoading = false,
+                            assetsRefreshing = false,
+                            assetsError = "",
+                        )
+                    }
+                }
+            }.onFailure { err ->
+                if (!active || gen != assetsGeneration || err is CancellationException) return@onFailure
+                _state.update {
+                    it.copy(
+                        assetsLoading = false,
+                        assetsRefreshing = false,
+                        assetsError = err.message ?: "读取行情清单失败，请稍后重试",
+                    )
+                }
+            }
+        }
+    }
+
+    fun reloadTrackings(forceRefresh: Boolean = true) {
+        val trackingService = tracking ?: return
+        val user = _state.value.user ?: return
+        if (!active) return
+        val current = _state.value
+        if (!forceRefresh && current.trackings.isNotEmpty()) return
+        val gen = ++trackingGeneration
+        val prefs = trackingService.prefs
+        _state.update {
+            it.copy(
+                pinnedSecids = prefs.pinnedSecids(user.userId),
+                customTrackingOrder = prefs.customOrder(user.userId),
+                trackingError = "",
+                trackingLoading = current.trackings.isEmpty(),
+                trackingRefreshing = forceRefresh && current.trackings.isNotEmpty(),
+            )
+        }
+        trackingJob?.cancel()
+        trackingJob = scope.launch {
+            runCatching { trackingService.reader.fetchTrackings() }
+                .onSuccess { overview ->
+                    if (!active || gen != trackingGeneration) return@onSuccess
+                    _state.update {
+                        it.copy(
+                            trackings = overview.items,
+                            trackingAsOfDate = overview.asOfDate,
+                            trackingLoading = false,
+                            trackingRefreshing = false,
+                            trackingError = "",
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    if (!active || gen != trackingGeneration || err is CancellationException) return@onFailure
+                    _state.update {
+                        it.copy(
+                            trackingLoading = false,
+                            trackingRefreshing = false,
+                            trackingError = err.message ?: "读取跟踪列表失败，请稍后重试",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun toggleTracking(stock: Stock) {
+        val isTracked = _state.value.trackings.any { it.stock.secid == stock.secid }
+        if (isTracked) {
+            cancelTrackings(listOf(stock.secid))
+        } else {
+            startTracking(stock)
+        }
+    }
+
+    fun startTracking(stock: Stock) {
+        if (_state.value.user == null) {
+            openAuthDialog(AuthMode.LOGIN)
+            _state.update { it.copy(snackbarMessage = "登录后即可保存跟踪记录") }
+            return
+        }
+        val trackingService = tracking ?: return
+        if (stock.secid in _state.value.pendingTrackSecids) return
+        _state.update { it.copy(pendingTrackSecids = it.pendingTrackSecids + stock.secid) }
+        scope.launch {
+            try {
+                trackingService.commands.startTracking(stock.secid)
+                reloadTrackings(forceRefresh = true)
+                _state.update { it.copy(snackbarMessage = "已加入跟踪：${stock.name}") }
+            } catch (err: Exception) {
+                if (err !is CancellationException) {
+                    _state.update { it.copy(snackbarMessage = err.message ?: "加入跟踪失败，请稍后重试") }
+                }
+            } finally {
+                _state.update { it.copy(pendingTrackSecids = it.pendingTrackSecids - stock.secid) }
+            }
+        }
+    }
+
+    fun cancelTrackings(secids: List<String>) {
+        if (_state.value.user == null) {
+            openAuthDialog(AuthMode.LOGIN)
+            return
+        }
+        val targets = secids.distinct().filter { it.isNotBlank() }
+        if (targets.isEmpty()) return
+        val trackingService = tracking ?: return
+        _state.update { it.copy(pendingTrackSecids = it.pendingTrackSecids + targets) }
+        scope.launch {
+            try {
+                trackingService.commands.cancelTrackings(targets)
+                val removedSet = targets.toSet()
+                val userId = _state.value.user?.userId
+                if (userId != null) {
+                    val nextPinned = _state.value.pinnedSecids - removedSet
+                    val nextOrder = _state.value.customTrackingOrder.filterNot { it in removedSet }
+                    trackingService.prefs.savePinnedSecids(userId, nextPinned)
+                    trackingService.prefs.saveCustomOrder(userId, nextOrder)
+                    _state.update { it.copy(pinnedSecids = nextPinned, customTrackingOrder = nextOrder) }
+                }
+                reloadTrackings(forceRefresh = true)
+                _state.update {
+                    it.copy(
+                        snackbarMessage = if (targets.size == 1) "已结束跟踪" else "已结束 ${targets.size} 只标的跟踪",
+                    )
+                }
+            } catch (err: Exception) {
+                if (err !is CancellationException) {
+                    _state.update { it.copy(snackbarMessage = err.message ?: "结束跟踪失败，请稍后重试") }
+                }
+            } finally {
+                _state.update { it.copy(pendingTrackSecids = it.pendingTrackSecids - targets.toSet()) }
+            }
+        }
+    }
+
+    fun toggleTrackingSort(field: TrackingSortField) {
+        val current = _state.value
+        val nextDesc = if (current.trackingSortField == field) !current.trackingSortDescending else true
+        _state.update { it.copy(trackingSortField = field, trackingSortDescending = nextDesc) }
+    }
+
+    fun togglePinTracking(secid: String) {
+        val userId = _state.value.user?.userId ?: return
+        val prefs = tracking?.prefs ?: return
+        val next = if (secid in _state.value.pinnedSecids) {
+            _state.value.pinnedSecids - secid
+        } else {
+            _state.value.pinnedSecids + secid
+        }
+        prefs.savePinnedSecids(userId, next)
+        _state.update { it.copy(pinnedSecids = next) }
+    }
+
+    fun moveTracking(secid: String, moveUp: Boolean) {
+        val userId = _state.value.user?.userId ?: return
+        val prefs = tracking?.prefs ?: return
+        val currentSecids = _state.value.trackings.map { it.stock.secid }
+        val baseOrder = (_state.value.customTrackingOrder + currentSecids).distinct()
+        val index = baseOrder.indexOf(secid)
+        if (index < 0) return
+        val targetIndex = if (moveUp) index - 1 else index + 1
+        if (targetIndex !in baseOrder.indices) return
+        val mutable = baseOrder.toMutableList()
+        val item = mutable.removeAt(index)
+        mutable.add(targetIndex, item)
+        prefs.saveCustomOrder(userId, mutable)
+        _state.update {
+            it.copy(
+                customTrackingOrder = mutable,
+                trackingSortField = null,
+            )
+        }
+    }
+
+    private fun loadDetail(
+        stock: Stock,
+        period: Timeframe,
+        currentGen: Int,
+        refresh: Boolean,
+    ) {
+        val currentState = _state.value
         val hasContent = currentState.snapshot != null || currentState.quote != null
         _state.update {
             it.copy(
@@ -801,6 +1123,11 @@ class AppViewModel(
             .onSuccess { session ->
                 if (epoch == authEpoch) {
                     _state.update { it.copy(user = session.user) }
+                    if (session.user != null) {
+                        reloadTrackings(forceRefresh = true)
+                    } else {
+                        clearTrackingState()
+                    }
                 }
             }
             .onFailure {
@@ -872,6 +1199,7 @@ class AppViewModel(
                         snackbarMessage = "注册成功，欢迎来到缠观",
                     )
                 }
+                reloadTrackings(forceRefresh = true)
             }
         } catch (err: Exception) {
             if (epoch == authEpoch && err !is CancellationException) {
@@ -899,6 +1227,7 @@ class AppViewModel(
                         snackbarMessage = "欢迎回来，${result.user.nickname}",
                     )
                 }
+                reloadTrackings(forceRefresh = true)
             }
         } catch (err: Exception) {
             if (epoch == authEpoch && err !is CancellationException) {
@@ -921,6 +1250,7 @@ class AppViewModel(
             }
         } finally {
             _state.update { it.copy(accountBusy = false, user = null) }
+            clearTrackingState()
         }
     }
 
@@ -929,6 +1259,7 @@ class AppViewModel(
         _state.update { it.copy(accountBusy = true, accountError = "", accountMessage = "") }
         try {
             auth.deleteAccount()
+            clearTrackingState()
             _state.update {
                 it.copy(
                     user = null,
@@ -951,6 +1282,24 @@ class AppViewModel(
         authEpoch += 1
         auth.store.clear()
         _state.update { it.copy(user = null) }
+        clearTrackingState()
+    }
+
+    private fun clearTrackingState() {
+        trackingGeneration += 1
+        trackingJob?.cancel()
+        _state.update {
+            it.copy(
+                trackings = emptyList(),
+                trackingAsOfDate = "",
+                trackingLoading = false,
+                trackingRefreshing = false,
+                trackingError = "",
+                pendingTrackSecids = emptySet(),
+                pinnedSecids = emptySet(),
+                customTrackingOrder = emptyList(),
+            )
+        }
     }
 
     override fun onCleared() {

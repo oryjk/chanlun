@@ -13,11 +13,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.text.TextLayoutResult
 import cn.oryjk.changuan.domain.AppThemeMode
 import cn.oryjk.changuan.domain.AppUser
+import cn.oryjk.changuan.domain.AssetCategory
 import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.domain.Candle
 import cn.oryjk.changuan.domain.ChanAnalysis
@@ -29,6 +33,7 @@ import cn.oryjk.changuan.domain.Fractal
 import cn.oryjk.changuan.domain.Instrument
 import cn.oryjk.changuan.domain.LevelSignal
 import cn.oryjk.changuan.domain.MacdPoint
+import cn.oryjk.changuan.domain.MarketAssetItem
 import cn.oryjk.changuan.domain.MarketGuidance
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
@@ -46,17 +51,22 @@ import cn.oryjk.changuan.domain.SignalPoint
 import cn.oryjk.changuan.domain.SignalQuality
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.domain.Timeframe
+import cn.oryjk.changuan.domain.TrackedAsset
 import cn.oryjk.changuan.domain.Zhongshu
 import cn.oryjk.changuan.presentation.AppUiState
 import cn.oryjk.changuan.presentation.AuthMode
 import cn.oryjk.changuan.presentation.ChanGuanTheme
+import cn.oryjk.changuan.presentation.designsystem.AssetDetailSheetHost
 import cn.oryjk.changuan.presentation.designsystem.MainBottomBar
 import cn.oryjk.changuan.presentation.screens.AccountScreen
+import cn.oryjk.changuan.presentation.screens.AssetDetailScreen
 import cn.oryjk.changuan.presentation.screens.AuthDialog
 import cn.oryjk.changuan.presentation.screens.BackendEnvironmentDialog
 import cn.oryjk.changuan.presentation.screens.MarketScreen
 import cn.oryjk.changuan.presentation.screens.RankingScreen
 import cn.oryjk.changuan.presentation.screens.StockSearchScreen
+import cn.oryjk.changuan.presentation.screens.TrackingScreen
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -80,14 +90,14 @@ class ClarityUiScreenshotTest {
     private fun outputDir(): File =
         File("build/outputs/clarity-screenshots").apply { mkdirs() }
 
-    private fun captureAllWindows(fileName: String) {
+    private fun captureAllWindows(fileName: String, darkTheme: Boolean = false) {
         composeRule.waitForIdle()
         val decorView = composeRule.activity.window.decorView
         val width = decorView.width.coerceAtLeast(780)
         val height = decorView.height.coerceAtLeast(1688)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        canvas.drawColor(AndroidColor.WHITE)
+        canvas.drawColor(if (darkTheme) AndroidColor.BLACK else AndroidColor.WHITE)
 
         val windows = runCatching { WindowInspector.getGlobalWindowViews() }.getOrNull()
         if (!windows.isNullOrEmpty()) {
@@ -146,87 +156,16 @@ class ClarityUiScreenshotTest {
             Fractal(type = "top", candleIndex = 44, time = candles[44].time, price = candles[44].high),
         )
         val pens = listOf(
-            Pen(
-                id = 1,
-                startIndex = 0,
-                endIndex = 14,
-                direction = "up",
-                startTime = candles[0].time,
-                endTime = candles[14].time,
-                startPrice = candles[0].low,
-                endPrice = candles[14].high,
-                high = candles[14].high,
-                low = candles[0].low,
-                confirmed = true,
-            ),
-            Pen(
-                id = 2,
-                startIndex = 14,
-                endIndex = 28,
-                direction = "down",
-                startTime = candles[14].time,
-                endTime = candles[28].time,
-                startPrice = candles[14].high,
-                endPrice = candles[28].low,
-                high = candles[14].high,
-                low = candles[28].low,
-                confirmed = true,
-            ),
-            Pen(
-                id = 3,
-                startIndex = 28,
-                endIndex = 44,
-                direction = "up",
-                startTime = candles[28].time,
-                endTime = candles[44].time,
-                startPrice = candles[28].low,
-                endPrice = candles[44].high,
-                high = candles[44].high,
-                low = candles[28].low,
-                confirmed = true,
-            ),
+            Pen(1, 0, 14, "up", candles[0].time, candles[14].time, candles[0].low, candles[14].high, candles[14].high, candles[0].low, true),
+            Pen(2, 14, 28, "down", candles[14].time, candles[28].time, candles[14].high, candles[28].low, candles[14].high, candles[28].low, true),
+            Pen(3, 28, 44, "up", candles[28].time, candles[44].time, candles[28].low, candles[44].high, candles[44].high, candles[28].low, true),
         )
         val segments = listOf(
-            Segment(
-                id = 1,
-                startIndex = 0,
-                endIndex = 28,
-                direction = "up",
-                startTime = candles[0].time,
-                endTime = candles[28].time,
-                startPrice = candles[0].low,
-                endPrice = candles[28].low,
-                high = candles[14].high,
-                low = candles[28].low,
-                confirmed = true,
-            ),
-            Segment(
-                id = 2,
-                startIndex = 28,
-                endIndex = 44,
-                direction = "up",
-                startTime = candles[28].time,
-                endTime = candles[44].time,
-                startPrice = candles[28].low,
-                endPrice = candles[44].high,
-                high = candles[44].high,
-                low = candles[28].low,
-                confirmed = true,
-            ),
+            Segment(1, 0, 28, "up", candles[0].time, candles[28].time, candles[0].low, candles[28].low, candles[14].high, candles[28].low, true),
+            Segment(2, 28, 44, "up", candles[28].time, candles[44].time, candles[28].low, candles[44].high, candles[44].high, candles[28].low, true),
         )
         val zhongshu = listOf(
-            Zhongshu(
-                id = 1,
-                startIndex = 10,
-                endIndex = 30,
-                startTime = candles[10].time,
-                endTime = candles[30].time,
-                low = 1496.0,
-                high = 1568.0,
-                gg = 1584.0,
-                dd = 1482.0,
-                confirmed = true,
-            ),
+            Zhongshu(1, 10, 30, candles[10].time, candles[30].time, 1496.0, 1568.0, 1584.0, 1482.0, true),
         )
         val macd = candles.mapIndexed { idx, _ ->
             val dif = (idx - 22) * 0.45
@@ -248,25 +187,11 @@ class ClarityUiScreenshotTest {
         val lastCandle = candles.last()
         val prevCandle = candles[candles.size - 2]
         return MarketSnapshot(
-            instrument = Instrument(
-                secid = stock.secid,
-                symbol = stock.symbol,
-                name = stock.name,
-                decimal = 2,
-                currency = "CNY",
-                exchange = "SH",
-            ),
+            instrument = Instrument(stock.secid, stock.symbol, stock.name, 2, "CNY", "SH"),
             timeframe = Timeframe.DAILY.rawValue,
             timeframeLabel = Timeframe.DAILY.label,
             candles = candles,
-            analysis = ChanAnalysis(
-                fractals = fractals,
-                pens = pens,
-                segments = segments,
-                zhongshu = zhongshu,
-                mergedCount = candles.size,
-                trend = "consolidation",
-            ),
+            analysis = ChanAnalysis(fractals, pens, segments, zhongshu, candles.size, "consolidation"),
             summary = MarketSummary(
                 latest = lastCandle.close,
                 change = lastCandle.close - prevCandle.close,
@@ -275,24 +200,11 @@ class ClarityUiScreenshotTest {
                 low = lastCandle.low,
                 volume = lastCandle.volume,
             ),
-            guidance = MarketGuidance(
-                bias = "bullish",
-                reasons = listOf("已确认二买结构有效", "站稳中枢上沿"),
-                invalidationPrice = 1478.0,
-                strength = 84,
-            ),
+            guidance = MarketGuidance("bullish", listOf("已确认二买结构有效", "站稳中枢上沿"), 1478.0, 84),
             macd = macd,
             signals = ChanSignals(
                 trendType = "consolidation",
-                divergences = listOf(
-                    Divergence(
-                        kind = "trend",
-                        direction = "bullish",
-                        time = candles[28].time,
-                        price = candles[28].low,
-                        confirmed = true,
-                    ),
-                ),
+                divergences = listOf(Divergence("trend", "bullish", candles[28].time, candles[28].low, true)),
                 points = listOf(latestBuy),
             ),
             signalQuality = SignalQuality(
@@ -318,6 +230,121 @@ class ClarityUiScreenshotTest {
         )
     }
 
+    private fun sampleStockAssets(): List<MarketAssetItem> = listOf(
+        MarketAssetItem(
+            stock = DefaultStocks.KWEICHOW_MOUTAI,
+            latest = 1453.90,
+            change = 18.64,
+            changePercent = 1.30,
+            open = 1426.30,
+            high = 1454.93,
+            low = 1425.00,
+            previousClose = 1435.26,
+            volume = 3_996_700.0,
+            amount = 5_767_305_714.0,
+            sparkline = listOf(1412.0, 1421.0, 1435.26, 1440.5, 1453.90),
+            signalLabel = "二类买点",
+        ),
+        MarketAssetItem(
+            stock = Stock("300750.SZ", "300750", "宁德时代", "深A"),
+            latest = 264.80,
+            change = 6.20,
+            changePercent = 2.40,
+            open = 259.0,
+            high = 266.0,
+            low = 257.8,
+            previousClose = 258.60,
+            volume = 18_500_000.0,
+            amount = 4_890_000_000.0,
+            sparkline = listOf(248.0, 252.0, 255.0, 258.6, 264.8),
+            signalLabel = "一类买点",
+        ),
+        MarketAssetItem(
+            stock = Stock("600036.SH", "600036", "招商银行", "沪A"),
+            latest = 38.42,
+            change = -0.34,
+            changePercent = -0.88,
+            open = 38.80,
+            high = 38.95,
+            low = 38.20,
+            previousClose = 38.76,
+            volume = 42_100_000.0,
+            amount = 1_618_000_000.0,
+            sparkline = listOf(39.2, 39.0, 38.9, 38.76, 38.42),
+            signalLabel = null,
+        ),
+    )
+
+    private fun sampleEtfAssets(): List<MarketAssetItem> = listOf(
+        MarketAssetItem(
+            stock = Stock("510300.SH", "510300", "沪深300ETF", "ETF"),
+            latest = 4.182,
+            change = 0.039,
+            changePercent = 0.94,
+            open = 4.150,
+            high = 4.195,
+            low = 4.132,
+            previousClose = 4.143,
+            volume = 120_000_000.0,
+            amount = 5_018_400_000.0,
+            sparkline = listOf(4.09, 4.11, 4.14, 4.143, 4.182),
+            signalLabel = "三类买点",
+        ),
+        MarketAssetItem(
+            stock = Stock("159915.SZ", "159915", "创业板ETF", "ETF"),
+            latest = 2.334,
+            change = -0.028,
+            changePercent = -1.19,
+            open = 2.360,
+            high = 2.371,
+            low = 2.325,
+            previousClose = 2.362,
+            volume = 95_000_000.0,
+            amount = 2_217_300_000.0,
+            sparkline = listOf(2.41, 2.39, 2.37, 2.362, 2.334),
+            signalLabel = null,
+        ),
+    )
+
+    private fun sampleTrackings(): List<TrackedAsset> = listOf(
+        TrackedAsset(
+            stock = Stock("300750.SZ", "300750", "宁德时代", "深A"),
+            startDate = "2026-10-08",
+            startPrice = 240.00,
+            latestPrice = 264.80,
+            dayReturnPct = 2.40,
+            dayProfit = 258.33,
+            cumulativeReturnPct = 10.33,
+            cumulativeProfit = 1033.33,
+            currentValue = 11033.33,
+            sparkline = listOf(240.0, 245.5, 251.0, 258.6, 264.8),
+        ),
+        TrackedAsset(
+            stock = DefaultStocks.KWEICHOW_MOUTAI,
+            startDate = "2026-11-02",
+            startPrice = 1405.00,
+            latestPrice = 1453.90,
+            dayReturnPct = 1.30,
+            dayProfit = 132.67,
+            cumulativeReturnPct = 3.48,
+            cumulativeProfit = 348.04,
+            currentValue = 10348.04,
+            sparkline = listOf(1405.0, 1418.0, 1435.26, 1453.90),
+        ),
+        TrackedAsset(
+            stock = Stock("159915.SZ", "159915", "创业板ETF", "ETF"),
+            startDate = "2026-11-14",
+            startPrice = 2.380,
+            latestPrice = 2.334,
+            dayReturnPct = -1.19,
+            dayProfit = -117.65,
+            cumulativeReturnPct = -1.93,
+            cumulativeProfit = -193.28,
+            currentValue = 9806.72,
+            sparkline = listOf(2.380, 2.370, 2.362, 2.334),
+        ),
+    )
+
     private fun sampleState(dark: Boolean = false): AppUiState {
         val stock = DefaultStocks.KWEICHOW_MOUTAI
         val snapshot = sampleSnapshot()
@@ -327,6 +354,12 @@ class ClarityUiScreenshotTest {
             stock = stock,
             timeframe = Timeframe.DAILY,
             tab = RootTab.MARKET,
+            stockAssets = sampleStockAssets(),
+            etfAssets = sampleEtfAssets(),
+            assetsAsOfDate = "2026-11-16",
+            trackings = sampleTrackings(),
+            trackingAsOfDate = "2026-11-16",
+            pinnedSecids = setOf("300750.SZ"),
             environment = BackendEnvironment.DevelopmentProxy,
             themeMode = if (dark) AppThemeMode.DARK else AppThemeMode.LIGHT,
             snapshot = snapshot,
@@ -334,27 +367,9 @@ class ClarityUiScreenshotTest {
                 secid = stock.secid,
                 conclusion = "日线与 1 小时级别均已确认买点同向，次级别端点不早于大级别。",
                 levels = listOf(
-                    LevelSignal(
-                        timeframe = "1d",
-                        timeframeLabel = "日线",
-                        trendType = "consolidation",
-                        latestPoint = buyPoint,
-                        lowerConfirmation = buyPoint,
-                    ),
-                    LevelSignal(
-                        timeframe = "1h",
-                        timeframeLabel = "1 小时",
-                        trendType = "up_trend",
-                        latestPoint = buyPoint.copy(kind = 1, price = 1504.5),
-                        lowerConfirmation = null,
-                    ),
-                    LevelSignal(
-                        timeframe = "30m",
-                        timeframeLabel = "30 分钟",
-                        trendType = "consolidation",
-                        latestPoint = null,
-                        lowerConfirmation = null,
-                    ),
+                    LevelSignal("1d", "日线", "consolidation", buyPoint, buyPoint),
+                    LevelSignal("1h", "1 小时", "up_trend", buyPoint.copy(kind = 1, price = 1504.5), null),
+                    LevelSignal("30m", "30 分钟", "consolidation", null, null),
                 ),
             ),
             quote = MarketQuote(
@@ -373,10 +388,7 @@ class ClarityUiScreenshotTest {
                 amount = 6_720_000_000.0,
             ),
             board = sampleBoard(buyPoint),
-            user = AppUser(
-                userId = "usr-8f41c09d",
-                nickname = "林观澜",
-            ),
+            user = AppUser(userId = "usr-8f41c09d", nickname = "林观澜"),
             layers = ChartLayers(),
             shizukuState = ShizukuChannelState(enabled = true, availability = ShizukuAvailability.Ready),
         )
@@ -427,6 +439,26 @@ class ClarityUiScreenshotTest {
             ),
             RankingEntry(
                 rank = 2,
+                stock = Stock("300750.SZ", "300750", "宁德时代", "深A"),
+                bias = "bullish",
+                strength = 82,
+                latest = 264.80,
+                changePercent = 2.40,
+                invalidationPrice = 246.50,
+                latestPoint = buyPoint.copy(kind = 1, price = 251.20, time = t0.plus(1, ChronoUnit.DAYS)),
+                buyPoint = buyPoint.copy(kind = 1, price = 251.20, time = t0.plus(1, ChronoUnit.DAYS)),
+                sellPoint = null,
+                trend = listOf(
+                    QuotePoint(t0, 248.0),
+                    QuotePoint(t0.plus(1, ChronoUnit.DAYS), 251.2),
+                    QuotePoint(t0.plus(2, ChronoUnit.DAYS), 256.0),
+                    QuotePoint(t0.plus(3, ChronoUnit.DAYS), 264.8),
+                ),
+                signalQuality = null,
+                signalGroup = "confirmed",
+            ),
+            RankingEntry(
+                rank = 3,
                 stock = Stock("510300.SH", "510300", "沪深300ETF", "ETF"),
                 bias = "bullish",
                 strength = 78,
@@ -467,12 +499,19 @@ class ClarityUiScreenshotTest {
     private fun PreviewScaffold(
         darkTheme: Boolean,
         tab: RootTab,
+        hasTrackedAssets: Boolean = true,
         content: @Composable (Modifier) -> Unit,
     ) {
         CompositionLocalProvider(LocalInspectionMode provides true) {
             ChanGuanTheme(darkTheme = darkTheme) {
                 Scaffold(
-                    bottomBar = { MainBottomBar(currentTab = tab, onSelect = {}) },
+                    bottomBar = {
+                        MainBottomBar(
+                            currentTab = tab,
+                            hasTrackedAssets = hasTrackedAssets,
+                            onSelect = {},
+                        )
+                    },
                 ) { padding ->
                     Box(
                         modifier = Modifier
@@ -487,61 +526,225 @@ class ClarityUiScreenshotTest {
     }
 
     @Test
-    fun renderMarketLight() {
+    fun renderMarketListLight() {
         val state = sampleState(dark = false)
         composeRule.setContent {
             PreviewScaffold(darkTheme = false, tab = RootTab.MARKET) { m ->
                 MarketScreen(
                     state = state,
-                    onSelectTimeframe = {},
-                    onToggleLayer = {},
+                    onSelectCategory = {},
+                    onToggleSort = {},
                     onRefresh = {},
+                    onOpenAsset = {},
+                    onToggleTrack = {},
                     onOpenSearch = {},
-                    onOpenGlossary = {},
                     modifier = m,
                     applyStatusBarPadding = false,
                 )
             }
         }
-        captureAllWindows("market_light.png")
+        captureAllWindows("market_list_light.png", darkTheme = false)
     }
 
     @Test
-    fun renderMarketDark() {
+    fun renderMarketListDark() {
         val state = sampleState(dark = true)
         composeRule.setContent {
             PreviewScaffold(darkTheme = true, tab = RootTab.MARKET) { m ->
                 MarketScreen(
                     state = state,
-                    onSelectTimeframe = {},
-                    onToggleLayer = {},
+                    onSelectCategory = {},
+                    onToggleSort = {},
                     onRefresh = {},
+                    onOpenAsset = {},
+                    onToggleTrack = {},
                     onOpenSearch = {},
-                    onOpenGlossary = {},
                     modifier = m,
                     applyStatusBarPadding = false,
                 )
             }
         }
-        captureAllWindows("market_dark.png")
+        captureAllWindows("market_list_dark.png", darkTheme = true)
     }
 
     @Test
-    fun renderRankingExpandedLight() {
+    fun renderMarketEtfListLight() {
+        val state = sampleState(dark = false).copy(assetCategory = AssetCategory.ETF)
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = false, tab = RootTab.MARKET) { m ->
+                MarketScreen(
+                    state = state,
+                    onSelectCategory = {},
+                    onToggleSort = {},
+                    onRefresh = {},
+                    onOpenAsset = {},
+                    onToggleTrack = {},
+                    onOpenSearch = {},
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+        }
+        captureAllWindows("market_etf_light.png", darkTheme = false)
+    }
+
+    @Test
+    fun renderDetailSheetLight() {
+        val state = sampleState(dark = false).copy(detailSheetOpen = true)
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = false, tab = RootTab.MARKET) { m ->
+                MarketScreen(
+                    state = state,
+                    onSelectCategory = {},
+                    onToggleSort = {},
+                    onRefresh = {},
+                    onOpenAsset = {},
+                    onToggleTrack = {},
+                    onOpenSearch = {},
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                ChanGuanTheme(darkTheme = false) {
+                    AssetDetailSheetHost(activeKey = state.stock.secid, onDismissRequest = { true }) { _, drag ->
+                        AssetDetailScreen(
+                            state = state,
+                            onBack = {},
+                            onSelectTimeframe = {},
+                            onToggleLayer = {},
+                            onRefresh = {},
+                            onOpenSearch = {},
+                            onOpenGlossary = {},
+                            onToggleTrack = {},
+                            dragHeaderModifier = drag.headerModifier(state.stock.secid),
+                            insideSheet = true,
+                        )
+                    }
+                }
+            }
+        }
+        captureAllWindows("detail_sheet_light.png", darkTheme = false)
+    }
+
+    @Test
+    fun renderDetailSheetDark() {
+        val state = sampleState(dark = true).copy(detailSheetOpen = true)
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = true, tab = RootTab.MARKET) { m ->
+                MarketScreen(
+                    state = state,
+                    onSelectCategory = {},
+                    onToggleSort = {},
+                    onRefresh = {},
+                    onOpenAsset = {},
+                    onToggleTrack = {},
+                    onOpenSearch = {},
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                ChanGuanTheme(darkTheme = true) {
+                    AssetDetailSheetHost(activeKey = state.stock.secid, onDismissRequest = { true }) { _, drag ->
+                        AssetDetailScreen(
+                            state = state,
+                            onBack = {},
+                            onSelectTimeframe = {},
+                            onToggleLayer = {},
+                            onRefresh = {},
+                            onOpenSearch = {},
+                            onOpenGlossary = {},
+                            onToggleTrack = {},
+                            dragHeaderModifier = drag.headerModifier(state.stock.secid),
+                            insideSheet = true,
+                        )
+                    }
+                }
+            }
+        }
+        captureAllWindows("detail_sheet_dark.png", darkTheme = true)
+    }
+
+    @Test
+    fun renderTrackingLight() {
+        val state = sampleState(dark = false).copy(tab = RootTab.TRACKING)
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = false, tab = RootTab.TRACKING) { m ->
+                TrackingScreen(
+                    state = state,
+                    onOpenAuth = {},
+                    onGoMarket = {},
+                    onRefresh = {},
+                    onEnsureCatalog = {},
+                    onStartTrack = {},
+                    onCancelTracks = {},
+                    onOpenDetail = {},
+                    onOpenSearch = {},
+                    onToggleSort = {},
+                    onTogglePin = {},
+                    onMoveTrack = { _, _ -> },
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+        }
+        composeRule.onNodeWithText("宁德时代").performClick()
+        captureAllWindows("tracking_light.png", darkTheme = false)
+    }
+
+    @Test
+    fun renderTrackingDark() {
+        val state = sampleState(dark = true).copy(tab = RootTab.TRACKING)
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = true, tab = RootTab.TRACKING) { m ->
+                TrackingScreen(
+                    state = state,
+                    onOpenAuth = {},
+                    onGoMarket = {},
+                    onRefresh = {},
+                    onEnsureCatalog = {},
+                    onStartTrack = {},
+                    onCancelTracks = {},
+                    onOpenDetail = {},
+                    onOpenSearch = {},
+                    onToggleSort = {},
+                    onTogglePin = {},
+                    onMoveTrack = { _, _ -> },
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+        }
+        captureAllWindows("tracking_dark.png", darkTheme = true)
+    }
+
+    @Test
+    fun renderRankingExpandedLightAndVerifyFourCharNamesNotTruncated() {
         val state = sampleState(dark = false).copy(tab = RootTab.RANKING)
+        val layouts = mutableMapOf<String, TextLayoutResult>()
         composeRule.setContent {
             PreviewScaffold(darkTheme = false, tab = RootTab.RANKING) { m ->
                 RankingScreen(
                     state = state,
                     onRefresh = {},
                     onSelectStock = {},
+                    onToggleTrack = {},
                     modifier = m,
                     applyStatusBarPadding = false,
+                    onTitleTextLayout = { secid, result -> layouts[secid] = result },
                 )
             }
         }
         composeRule.onNodeWithText("贵州茅台").performClick()
-        captureAllWindows("ranking_expanded_light.png")
+        composeRule.waitForIdle()
+
+        assertFalse("贵州茅台 truncated!", layouts["600519.SH"]?.hasVisualOverflow ?: true)
+        assertFalse("宁德时代 truncated!", layouts["300750.SZ"]?.hasVisualOverflow ?: true)
+        composeRule.onAllNodesWithText("已确认").assertCountEquals(0)
+        composeRule.onAllNodesWithText("候选").assertCountEquals(0)
+
+        captureAllWindows("ranking_expanded_light.png", darkTheme = false)
     }
 
     @Test
@@ -563,7 +766,7 @@ class ClarityUiScreenshotTest {
                 }
             }
         }
-        captureAllWindows("search_light.png")
+        captureAllWindows("search_light.png", darkTheme = false)
     }
 
     @Test
@@ -587,34 +790,7 @@ class ClarityUiScreenshotTest {
                 )
             }
         }
-        captureAllWindows("menu_light.png")
-    }
-
-    @Test
-    fun renderMenuGuestLight() {
-        val state = sampleState(dark = false).copy(
-            tab = RootTab.ACCOUNT,
-            user = null,
-        )
-        composeRule.setContent {
-            PreviewScaffold(darkTheme = false, tab = RootTab.ACCOUNT) { m ->
-                AccountScreen(
-                    state = state,
-                    onOpenAuth = {},
-                    onLogout = {},
-                    onDeleteAccount = {},
-                    onSelectThemeMode = {},
-                    onOpenEnvironmentDialog = {},
-                    onOpenInstallerSettings = {},
-                    onCheckUpdate = {},
-                    onOpenReleaseHistory = {},
-                    onOpenGlossary = {},
-                    modifier = m,
-                    applyStatusBarPadding = false,
-                )
-            }
-        }
-        captureAllWindows("menu_guest_light.png")
+        captureAllWindows("menu_light.png", darkTheme = false)
     }
 
     @Test
@@ -638,70 +814,6 @@ class ClarityUiScreenshotTest {
                 )
             }
         }
-        captureAllWindows("menu_dark.png")
-    }
-
-    @Test
-    fun renderAuthRegisterDialogLight() {
-        val state = sampleState(dark = false).copy(tab = RootTab.ACCOUNT)
-        composeRule.setContent {
-            PreviewScaffold(darkTheme = false, tab = RootTab.ACCOUNT) { m ->
-                AccountScreen(
-                    state = state,
-                    onOpenAuth = {},
-                    onLogout = {},
-                    onDeleteAccount = {},
-                    onSelectThemeMode = {},
-                    onOpenEnvironmentDialog = {},
-                    onOpenInstallerSettings = {},
-                    onCheckUpdate = {},
-                    onOpenReleaseHistory = {},
-                    modifier = m,
-                    applyStatusBarPadding = false,
-                )
-                AuthDialog(
-                    mode = AuthMode.REGISTER,
-                    busy = false,
-                    sendingCode = false,
-                    cooldownSeconds = 0,
-                    error = "",
-                    message = "验证码已发送至邮箱，请在 10 分钟内完成验证",
-                    onSwitchMode = {},
-                    onSendCode = {},
-                    onRegister = { _, _, _, _ -> },
-                    onLogin = { _, _ -> },
-                    onDismiss = {},
-                )
-            }
-        }
-        captureAllWindows("auth_register_light.png")
-    }
-
-    @Test
-    fun renderEnvDialogLight() {
-        val state = sampleState(dark = false).copy(tab = RootTab.ACCOUNT)
-        composeRule.setContent {
-            PreviewScaffold(darkTheme = false, tab = RootTab.ACCOUNT) { m ->
-                AccountScreen(
-                    state = state,
-                    onOpenAuth = {},
-                    onLogout = {},
-                    onDeleteAccount = {},
-                    onSelectThemeMode = {},
-                    onOpenEnvironmentDialog = {},
-                    onOpenInstallerSettings = {},
-                    onCheckUpdate = {},
-                    onOpenReleaseHistory = {},
-                    modifier = m,
-                    applyStatusBarPadding = false,
-                )
-                BackendEnvironmentDialog(
-                    current = BackendEnvironment.DevelopmentProxy,
-                    onSelect = {},
-                    onDismiss = {},
-                )
-            }
-        }
-        captureAllWindows("env_dialog_light.png")
+        captureAllWindows("menu_dark.png", darkTheme = true)
     }
 }

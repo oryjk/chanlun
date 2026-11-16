@@ -14,15 +14,23 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -41,7 +49,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
@@ -491,6 +502,118 @@ fun InlineMetric(
             color = signedColor(value),
             maxLines = 1,
             softWrap = false,
+        )
+    }
+}
+
+@Composable
+fun StarkUnderlineTabs(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    optionTag: ((Int) -> String?)? = null,
+) {
+    if (options.isEmpty()) return
+    val palette = LocalChanPalette.current
+    val haptics = LocalHapticFeedback.current
+    val safeIndex = selectedIndex.coerceIn(0, options.lastIndex)
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectableGroup(),
+        ) {
+            options.forEachIndexed { index, label ->
+                val isSelected = index == safeIndex
+                val tag = optionTag?.invoke(index)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(if (tag != null) Modifier.testTag(tag) else Modifier)
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.Tab,
+                            onClick = {
+                                if (!isSelected) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onSelect(index)
+                                }
+                            },
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleSmall.tabular(),
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) palette.inkPrimary else palette.inkMuted,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(48.dp)
+                            .height(3.dp)
+                            .clip(ClarityRadius.pill)
+                            .background(if (isSelected) palette.inkPrimary else Color.Transparent),
+                    )
+                }
+            }
+        }
+        HorizontalDivider(
+            modifier = Modifier.fillMaxWidth(),
+            thickness = 0.5.dp,
+            color = palette.cardBorder,
+        )
+    }
+}
+
+@Composable
+fun SortableColumnHeader(
+    label: String,
+    active: Boolean,
+    descending: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalChanPalette.current
+    val icon = when {
+        !active -> Icons.Outlined.UnfoldMore
+        descending -> Icons.Outlined.ExpandMore
+        else -> Icons.Outlined.ExpandLess
+    }
+    val sortStateText = when {
+        !active -> "未排序"
+        descending -> "降序"
+        else -> "升序"
+    }
+    val tint = if (active) palette.actionPrimary else palette.inkMuted
+    Row(
+        modifier = modifier
+            .defaultMinSize(minHeight = 32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { stateDescription = sortStateText }
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = tint,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+        )
+        Spacer(modifier = Modifier.width(3.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(14.dp),
         )
     }
 }

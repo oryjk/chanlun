@@ -6,6 +6,7 @@ from ...domain.errors import (
     ChanlunError,
     EmptySearchQuery,
     IdentityServiceUnavailable,
+    InvalidAssetQuery,
     InvalidSecurityId,
     InvalidTimeframe,
     MarketDataNotFound,
@@ -17,7 +18,7 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ChanlunError)
     async def handle_domain_error(request: Request, error: ChanlunError) -> JSONResponse:
         status_code = 500
-        if isinstance(error, (InvalidSecurityId, InvalidTimeframe, EmptySearchQuery)):
+        if isinstance(error, (InvalidSecurityId, InvalidTimeframe, InvalidAssetQuery, EmptySearchQuery)):
             status_code = 400
         elif isinstance(error, MarketDataNotFound):
             status_code = 404

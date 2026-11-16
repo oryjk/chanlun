@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..interfaces.api.auth_routes import router as auth_router
 from ..interfaces.api.app_auth_routes import router as app_auth_router
+from ..interfaces.api.app_tracking_routes import router as app_tracking_router
 from ..interfaces.api.error_handlers import register_error_handlers
 from ..interfaces.api.routes import router
 from .container import build_application
@@ -35,6 +36,7 @@ async def lifespan(application):
 app = FastAPI(title="缠观 API", version="0.5.0", lifespan=lifespan)
 app.state.settings = settings
 app.state.native_auth = build_native_auth()
+app.state.native_tracking = services.native_tracking
 app.state.queries = services.queries
 app.state.commands = services.commands
 app.add_middleware(
@@ -46,4 +48,5 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(app_auth_router)
+app.include_router(app_tracking_router)
 register_error_handlers(app)

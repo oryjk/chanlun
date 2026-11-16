@@ -16,6 +16,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -91,27 +92,27 @@ val LightChanPalette = ChanPalette(
 
 val DarkChanPalette = ChanPalette(
     isDark = true,
-    backgroundCanvas = Color(0xFF0F1418),
-    cardSurface = Color(0xFF171E24),
-    subtleSurface = Color(0xFF1F2830),
-    cardBorder = Color(0xFF2A3540),
+    backgroundCanvas = Color(0xFF000000),
+    cardSurface = Color(0xFF000000),
+    subtleSurface = Color(0xFF16181C),
+    cardBorder = Color(0xFF2F3336),
     primaryBrand = Color(0xFF6FA3D4),
-    primaryBrandSoft = Color(0xFF1A2C3D),
+    primaryBrandSoft = Color(0xFF162432),
     warmAmber = Color(0xFFF4A261),
-    warmAmberSurface = Color(0xFF2B231B),
-    warmAmberBorder = Color(0xFF4A3828),
+    warmAmberSurface = Color(0xFF241C14),
+    warmAmberBorder = Color(0xFF433222),
     warmAmberText = Color(0xFFF7C597),
     positiveRed = Color(0xFFF06A66),
-    positiveRedSurface = Color(0xFF361D1E),
+    positiveRedSurface = Color(0xFF2B1617),
     negativeGreen = Color(0xFF38B892),
-    negativeGreenSurface = Color(0xFF16332B),
-    inkPrimary = Color(0xFFECF0F4),
-    inkSecondary = Color(0xFFA9B4BE),
-    inkMuted = Color(0xFF6E7B87),
-    actionPrimary = Color(0xFFECF0F4),
-    onActionPrimary = Color(0xFF0F1418),
-    actionPrimarySoft = Color(0xFF1F2830),
-    onActionPrimarySoft = Color(0xFFECF0F4),
+    negativeGreenSurface = Color(0xFF112922),
+    inkPrimary = Color(0xFFE7E9EA),
+    inkSecondary = Color(0xFFA8AEB5),
+    inkMuted = Color(0xFF71767B),
+    actionPrimary = Color(0xFFE7E9EA),
+    onActionPrimary = Color(0xFF000000),
+    actionPrimarySoft = Color(0xFF16181C),
+    onActionPrimarySoft = Color(0xFFE7E9EA),
     penGold = Color(0xFFE8B44C),
     segmentBlue = Color(0xFF6FA3D4),
     zhongshuViolet = Color(0xFFA792D6),
@@ -238,6 +239,7 @@ fun ChanGuanTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = view.context.findActivity()?.window ?: return@SideEffect
+            window.decorView.setBackgroundColor(palette.backgroundCanvas.toArgb())
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !darkTheme
                 isAppearanceLightNavigationBars = !darkTheme

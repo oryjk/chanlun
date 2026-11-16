@@ -10,6 +10,10 @@ class InvalidTimeframe(ChanlunError):
     pass
 
 
+class InvalidAssetQuery(ChanlunError):
+    pass
+
+
 class EmptySearchQuery(ChanlunError):
     pass
 

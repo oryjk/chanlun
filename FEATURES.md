@@ -32,5 +32,5 @@
 - 在 Mac 按 `ios/README.md` 设置团队、Bundle ID 与 HTTPS API，完成原生编译、双端交互与真实 Apple 登录验证后进入 TestFlight。
 - 按逐日可知数据回放验证量价辅助条件，分别报告失效率、信号覆盖、确认延迟与扣费结果；验证前不启用量能硬过滤。
 - 在 Mac 微信开发者工具重新进入缠观，若仍启动失败则读取页面上的诊断信息。
-- 游客及登录后全部行情/四周期结构/多级别联立/分时/榜单功能已在原生 Android 客户端落地，采用澄境（Clarity）浅色/深色双主题视觉体系、「行情 / 榜单 / 菜单」适配手机底栏与平板侧栏、飞书 SMTP 邮箱验证码注册与密码登录、三环境 API 切换器（默认 `https://ai.oryjk.cn:82/chanlun-dev/`）以及外网/内网双通道 30 秒自动检测更新（SHA-256/签名校验、Shizuku 与系统安装）。
+- 原生 Android 客户端已上线（v1.2.0）：采用「行情 / 跟踪 / 榜单 / 菜单」四项导航、策略家 X × TradingView 无卡片 `0.5dp` 细分割线视觉与 OLED `#000000` 纯黑深色模式；「行情」提供股票/ETF 双分类实时列表（`GET /api/market/assets`），点击标的打开无卡片 `AssetDetailScreen` 抽屉查看四周期缠论 K 线/分时并可一键加入「跟踪」（每只 ¥10,000 模拟本金记账、六档成长图标、置顶与批量管理，`/api/app-tracking`）；「榜单」去除行内冗余确认徽标并确保 4 字以内资产名完整显示；支持飞书 SMTP 邮箱验证码注册/登录、三环境 API 切换与双通道 30 秒自动检测更新。
 - 公网 `https://ai.oryjk.cn:82/chanlun-dev/` 与 `https://ai.oryjk.cn:82/chanlun-android/` 已通过 `out109` 反向代理与本机网关打通；公网 `match.oryjk.cn/chanlun/` 仍待独立生产发布。

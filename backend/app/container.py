@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 
+from ..application.commands.build_daily_rankings import BuildDailyRankingsCommand
 from ..application.commands.login_with_webview_code import LoginWithWebviewCodeCommand
 from ..application.commands.record_quote_sample import RecordQuoteSampleCommand
 from ..application.commands.services import CommandServices
-from ..application.commands.build_daily_rankings import BuildDailyRankingsCommand
 from ..application.queries.get_current_user import GetCurrentUserQuery
+from ..application.queries.get_market_assets import GetMarketAssetsQuery
 from ..application.queries.get_market_snapshot import GetMarketSnapshotQuery
 from ..application.queries.get_mini_program_link import GetMiniProgramLinkQuery
 from ..application.queries.get_quote import GetQuoteQuery
@@ -16,27 +17,34 @@ from ..application.queries.services import QueryServices
 from ..domain.services.chan_analyzer import ChanAnalyzer
 from ..domain.services.chan_signals import ChanSignalAnalyzer
 from ..domain.services.market_analysis import MarketAnalysisPipeline
-from ..domain.services.structure_guidance import StructureGuidanceEvaluator
 from ..domain.services.signal_quality import SignalQualityEvaluator
+from ..domain.services.structure_guidance import StructureGuidanceEvaluator
 from ..infrastructure.auth.registration_gateway import RegistrationSystemGateway
 from ..infrastructure.auth.signed_session_codec import SignedSessionCodec
 from ..infrastructure.cache.market_data_cache import CachedMarketDataReader
 from ..infrastructure.clock import SystemClock
 from ..infrastructure.http.json_client import JsonHttpClient
+from ..infrastructure.market.asset_catalog import MarketAssetCatalogAdapter
+from ..infrastructure.market.closed_trading_day import IndexClosedTradingDayReader
 from ..infrastructure.market.eastmoney_intraday import EastmoneyIntradayReader
 from ..infrastructure.market.eastmoney_market_data import EastmoneyMarketDataReader
 from ..infrastructure.market.eastmoney_quote import EastmoneyQuoteReader
 from ..infrastructure.market.eastmoney_stock_pool import EastmoneyStockPoolReader
 from ..infrastructure.market.eastmoney_stock_search import EastmoneyStockSearchReader
-from ..infrastructure.market.fallback_market_data import FallbackMarketDataReader, FallbackStockUniverseReader
+from ..infrastructure.market.fallback_market_data import (
+    FallbackMarketDataReader,
+    FallbackQuoteReader,
+    FallbackStockUniverseReader,
+)
 from ..infrastructure.market.sina_adjustment import SinaForwardAdjustment
 from ..infrastructure.market.sina_market_data import SinaMarketDataReader
+from ..infrastructure.market.sina_quote import SinaQuoteReader
 from ..infrastructure.market.sina_stock_pool import SinaStockPoolReader
 from ..infrastructure.persistence.json_quote_store import JsonQuoteStore
 from ..infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
-from ..infrastructure.market.closed_trading_day import IndexClosedTradingDayReader
 from .ranking_worker import RankingWorker
 from .settings import Settings
+from .tracking import NativeTrackingServices, build_native_tracking
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,7 @@ class Application:
     queries: QueryServices
     commands: CommandServices
     ranking_worker: RankingWorker | None
+    native_tracking: NativeTrackingServices
 
 
 def build_application(settings: Settings) -> Application:
@@ -54,6 +63,10 @@ def build_application(settings: Settings) -> Application:
             EastmoneyMarketDataReader(http_client),
             SinaMarketDataReader(http_client, stock_search, SinaForwardAdjustment(http_client)),
         )
+    )
+    quote_reader = FallbackQuoteReader(
+        EastmoneyQuoteReader(http_client),
+        SinaQuoteReader(http_client),
     )
     quote_store = JsonQuoteStore("var/quotes")
     registration = RegistrationSystemGateway(settings.registration_api_base)
@@ -67,6 +80,7 @@ def build_application(settings: Settings) -> Application:
     )
     snapshot_query = GetMarketSnapshotQuery(market_data, pipeline, clock)
     ranking_store = SqliteRankingStore(settings.ranking_store_path)
+    asset_catalog = MarketAssetCatalogAdapter(http_client)
     stock_universe = FallbackStockUniverseReader(EastmoneyStockPoolReader(http_client), SinaStockPoolReader(http_client))
     build_daily_rankings = BuildDailyRankingsCommand(
         stock_universe,
@@ -82,12 +96,13 @@ def build_application(settings: Settings) -> Application:
     queries = QueryServices(
         search_stocks=SearchStocksQuery(stock_search),
         get_market_snapshot=snapshot_query,
-        get_quote=GetQuoteQuery(EastmoneyQuoteReader(http_client)),
+        get_quote=GetQuoteQuery(quote_reader),
         get_quote_series=GetQuoteSeriesQuery(quote_store, EastmoneyIntradayReader(http_client)),
         get_rankings=GetRankingsQuery(ranking_store),
         get_signal_confluence=GetSignalConfluenceQuery(snapshot_query),
         get_current_user=GetCurrentUserQuery(session_codec),
         get_mini_program_link=GetMiniProgramLinkQuery(registration),
+        get_market_assets=GetMarketAssetsQuery(asset_catalog, ranking_store, clock),
     )
     commands = CommandServices(
         record_quote_sample=RecordQuoteSampleCommand(quote_store),
@@ -104,4 +119,18 @@ def build_application(settings: Settings) -> Application:
         if settings.ranking_enabled
         else None
     )
-    return Application(queries=queries, commands=commands, ranking_worker=ranking_worker)
+    native_tracking = build_native_tracking(
+        quote_reader=quote_reader,
+        batch_quotes=quote_reader,
+        ranking_reader=ranking_store,
+        market_data=market_data,
+        stock_search=stock_search,
+        clock=clock,
+        store_path=settings.tracking_store_path,
+    )
+    return Application(
+        queries=queries,
+        commands=commands,
+        ranking_worker=ranking_worker,
+        native_tracking=native_tracking,
+    )

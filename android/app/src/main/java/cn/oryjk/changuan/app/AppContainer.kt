@@ -9,6 +9,7 @@ import cn.oryjk.changuan.application.EnvironmentStore
 import cn.oryjk.changuan.application.MarketUseCases
 import cn.oryjk.changuan.application.RouteStore
 import cn.oryjk.changuan.application.ThemePreferenceStore
+import cn.oryjk.changuan.application.TrackingUseCases
 import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.infrastructure.ApiClient
 import cn.oryjk.changuan.infrastructure.AuthGateway
@@ -19,6 +20,8 @@ import cn.oryjk.changuan.infrastructure.SharedPreferencesEnvironmentStore
 import cn.oryjk.changuan.infrastructure.SharedPreferencesRouteStore
 import cn.oryjk.changuan.infrastructure.SharedPreferencesSessionStore
 import cn.oryjk.changuan.infrastructure.SharedPreferencesThemeStore
+import cn.oryjk.changuan.infrastructure.SharedPreferencesTrackingPreferenceStore
+import cn.oryjk.changuan.infrastructure.TrackingGateway
 import cn.oryjk.changuan.infrastructure.update.AndroidUpdateGateway
 import cn.oryjk.changuan.presentation.AppViewModel
 import okhttp3.OkHttpClient
@@ -66,9 +69,19 @@ class AppContainer(context: Context) {
             )
             val marketGateway = MarketGateway(apiClient)
             val authGateway = AuthGateway(apiClient)
+            val trackingGateway = TrackingGateway(apiClient)
+            val trackingPrefs = SharedPreferencesTrackingPreferenceStore(
+                context = appContext,
+                prefsName = SharedPreferencesTrackingPreferenceStore.prefsNameFor(environment),
+            )
             EnvironmentServices(
                 market = MarketUseCases(reader = marketGateway, writer = marketGateway),
                 auth = AuthUseCases(reader = authGateway, commands = authGateway, store = sessionStore),
+                tracking = TrackingUseCases(
+                    reader = trackingGateway,
+                    commands = trackingGateway,
+                    prefs = trackingPrefs,
+                ),
             )
         }
     }

@@ -116,7 +116,13 @@ def delete_account(request: Request):
     token = bearer(request)
     if not token:
         raise HTTPException(401, '请先登录')
-    invoke(lambda: services(request).commands.delete_account(token))
+    auth = services(request)
+    user = auth.session.execute(token) if auth.session else None
+    invoke(lambda: auth.commands.delete_account(token))
+    if user is not None:
+        tracking = getattr(request.app.state, 'native_tracking', None)
+        if tracking is not None and tracking.commands is not None:
+            tracking.commands.clear_user(user.user_id)
     return {'ok': True}
 
 

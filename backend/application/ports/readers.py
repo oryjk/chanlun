@@ -2,6 +2,7 @@ from datetime import date
 from typing import Callable, Protocol
 
 from ...domain.models import MarketData, QuoteSeries, RealtimeQuote, Stock, TimeFrame
+from ...domain.tracking import AssetCategory, AssetSortField, MarketAssetItem
 from ..ranking_jobs import RankingItem, RankingView
 
 
@@ -28,6 +29,21 @@ class MarketDataReader(Protocol):
 
 class QuoteReader(Protocol):
     def read_quote(self, secid: str) -> RealtimeQuote: ...
+
+
+class BatchQuoteReader(Protocol):
+    def read_quotes(self, secids: tuple[str, ...]) -> dict[str, RealtimeQuote]: ...
+
+
+class MarketAssetCatalogReader(Protocol):
+    def list_assets(
+        self,
+        category: AssetCategory,
+        *,
+        sort_field: AssetSortField,
+        descending: bool,
+        limit: int,
+    ) -> tuple[MarketAssetItem, ...]: ...
 
 
 class QuoteSeriesReader(Protocol):

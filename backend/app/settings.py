@@ -18,6 +18,7 @@ class Settings:
     ranking_run_at: str = "15:30"
     ranking_workers: int = 4
     ranking_enabled: bool = True
+    tracking_store_path: str = "var/trackings/trackings.sqlite3"
 
 
 def _cors_allow_origins() -> list[str]:
@@ -54,4 +55,5 @@ def load_settings() -> Settings:
         ranking_run_at=run_at,
         ranking_workers=workers,
         ranking_enabled=os.getenv("CHANLUN_RANKING_ENABLED", "true").lower() == "true",
+        tracking_store_path=os.getenv("CHANLUN_TRACKING_STORE_PATH", "var/trackings/trackings.sqlite3"),
     )

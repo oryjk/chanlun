@@ -1,10 +1,10 @@
 package cn.oryjk.changuan.presentation.screens
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,7 +32,6 @@ import cn.oryjk.changuan.domain.SignalQuality
 import cn.oryjk.changuan.domain.SignalRules
 import cn.oryjk.changuan.domain.Timeframe
 import cn.oryjk.changuan.presentation.LocalChanPalette
-import cn.oryjk.changuan.presentation.designsystem.ClarityCard
 import cn.oryjk.changuan.presentation.designsystem.ClarityRadius
 import cn.oryjk.changuan.presentation.designsystem.FinancialMetricGroup
 import cn.oryjk.changuan.presentation.designsystem.FinancialNumber
@@ -74,9 +73,17 @@ fun SignalPanel(
         "${kindLabel}${dirLabel}背驰"
     } ?: "暂无背驰"
 
-    ClarityCard(
-        modifier = modifier,
-        contentPadding = PaddingValues(14.dp),
+    val conclusionAccent = when {
+        isInvalidated -> palette.warmAmberText
+        snapshot.guidance.bias == "bullish" -> palette.positiveRed
+        snapshot.guidance.bias == "bearish" -> palette.negativeGreen
+        else -> palette.inkPrimary
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
@@ -89,31 +96,20 @@ fun SignalPanel(
             },
         )
 
-        val conclusionContainer = when {
-            isInvalidated -> palette.warmAmberSurface
-            snapshot.guidance.bias == "bullish" -> palette.positiveRedSurface
-            snapshot.guidance.bias == "bearish" -> palette.negativeGreenSurface
-            else -> palette.subtleSurface
-        }
-        val conclusionBorder = when {
-            isInvalidated -> palette.warmAmberBorder
-            else -> palette.cardBorder
-        }
-        val conclusionTextColor = when {
-            isInvalidated -> palette.warmAmberText
-            snapshot.guidance.bias == "bullish" -> palette.positiveRed
-            snapshot.guidance.bias == "bearish" -> palette.negativeGreen
-            else -> palette.inkPrimary
-        }
-
-        Surface(
-            color = conclusionContainer,
-            shape = ClarityRadius.tile,
-            border = BorderStroke(1.dp, conclusionBorder),
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .size(7.dp)
+                    .clip(ClarityRadius.pill)
+                    .background(conclusionAccent),
+            )
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Row(
@@ -125,9 +121,13 @@ fun SignalPanel(
                         text = conclusion.title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = conclusionTextColor,
+                        color = conclusionAccent,
                     )
-                    StarkBadgeTag(text = SignalRules.biasLabel(snapshot.guidance.bias))
+                    Text(
+                        text = SignalRules.biasLabel(snapshot.guidance.bias),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.inkSecondary,
+                    )
                 }
                 Text(
                     text = conclusion.detail,
@@ -138,12 +138,15 @@ fun SignalPanel(
         }
 
         if (quality != null) {
+            LedgerHeaderRule()
             QualityFactBlock(
                 point = latestPoint,
                 quality = quality,
                 decimals = decimals,
             )
         }
+
+        LedgerHeaderRule()
 
         FinancialMetricGroup(
             items = listOf(
@@ -158,8 +161,8 @@ fun SignalPanel(
             alignStart = true,
         )
 
+        LedgerHeaderRule()
         if (points.isNotEmpty()) {
-            LedgerHeaderRule()
             Text(
                 text = "结构端点买卖点（日期为结构端点日期）",
                 style = MaterialTheme.typography.labelMedium,
@@ -176,7 +179,6 @@ fun SignalPanel(
                 }
             }
         } else {
-            LedgerHeaderRule()
             Text(
                 text = "当前周期未识别出有效三类买卖点。",
                 style = MaterialTheme.typography.bodySmall,
@@ -356,9 +358,10 @@ fun ConfluenceSection(
     val palette = LocalChanPalette.current
     val hasConfirmedMatch = confluence?.levels?.any { it.lowerConfirmation != null } == true
 
-    ClarityCard(
-        modifier = modifier,
-        contentPadding = PaddingValues(14.dp),
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         SectionTitle(
@@ -474,9 +477,10 @@ fun RangeSection(
     val rangeHigh = candles.maxOfOrNull { it.high }
     val rangeLow = candles.minOfOrNull { it.low }
 
-    ClarityCard(
-        modifier = modifier,
-        contentPadding = PaddingValues(14.dp),
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         SectionTitle(title = "区间与最近中枢")

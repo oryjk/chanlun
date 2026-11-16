@@ -2,6 +2,8 @@ package cn.oryjk.changuan.infrastructure
 
 import cn.oryjk.changuan.application.MarketReader
 import cn.oryjk.changuan.application.QuoteWriter
+import cn.oryjk.changuan.domain.AssetCategory
+import cn.oryjk.changuan.domain.AssetSortField
 import cn.oryjk.changuan.domain.Candle
 import cn.oryjk.changuan.domain.ChanAnalysis
 import cn.oryjk.changuan.domain.ChanSignals
@@ -10,11 +12,12 @@ import cn.oryjk.changuan.domain.Fractal
 import cn.oryjk.changuan.domain.Instrument
 import cn.oryjk.changuan.domain.LevelSignal
 import cn.oryjk.changuan.domain.MacdPoint
+import cn.oryjk.changuan.domain.MarketAssetItem
+import cn.oryjk.changuan.domain.MarketAssetList
 import cn.oryjk.changuan.domain.MarketGuidance
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketSummary
-import cn.oryjk.changuan.domain.MarketTime
 import cn.oryjk.changuan.domain.Pen
 import cn.oryjk.changuan.domain.QuotePoint
 import cn.oryjk.changuan.domain.QuoteSeries
@@ -27,9 +30,7 @@ import cn.oryjk.changuan.domain.SignalQuality
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.domain.Timeframe
 import cn.oryjk.changuan.domain.Zhongshu
-import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import java.time.Instant
 
 class MarketGateway(
     private val api: ApiClient,
@@ -83,6 +84,23 @@ class MarketGateway(
             path = "api/chan/confluence",
             query = listOf("secid" to secid),
             mapper = ::parseConfluence,
+        )
+
+    override suspend fun assets(
+        category: AssetCategory,
+        sortField: AssetSortField,
+        descending: Boolean,
+        limit: Int,
+    ): MarketAssetList =
+        api.send(
+            path = "api/market/assets",
+            query = listOf(
+                "category" to category.rawValue,
+                "sort" to sortField.rawValue,
+                "order" to if (descending) "desc" else "asc",
+                "limit" to limit.toString(),
+            ),
+            mapper = ::parseAssetList,
         )
 
     override suspend fun record(quote: MarketQuote): QuoteSeries {
@@ -341,27 +359,26 @@ class MarketGateway(
                 updateError = obj.optString("update_error"),
                 analysisVersion = obj.optInt("analysis_version"),
             )
+        internal fun parseAssetList(obj: JsonObject): MarketAssetList =
+            MarketAssetList(
+                category = AssetCategory.fromRaw(obj.optString("category")),
+                asOfDate = obj.optString("as_of_date"),
+                items = obj.optArray("items").map { row ->
+                    MarketAssetItem(
+                        stock = parseStock(row.reqObject("stock")),
+                        latest = row.reqDouble("latest"),
+                        change = row.optDouble("change") ?: 0.0,
+                        changePercent = row.optDouble("change_percent") ?: 0.0,
+                        open = row.optDouble("open") ?: 0.0,
+                        high = row.optDouble("high") ?: 0.0,
+                        low = row.optDouble("low") ?: 0.0,
+                        previousClose = row.optDouble("previous_close") ?: 0.0,
+                        volume = row.optDouble("volume") ?: 0.0,
+                        amount = row.optDouble("amount") ?: 0.0,
+                        sparkline = row.optDoubleList("sparkline"),
+                        signalLabel = row.optString("signal_label"),
+                    )
+                },
+            )
     }
 }
-
-private fun JsonObject.reqObject(key: String): JsonObject =
-    optObject(key) ?: throw ApiError.InvalidData()
-
-private fun JsonObject.optObject(key: String): JsonObject? =
-    optElement(key)?.takeIf { it.isJsonObject }?.asJsonObject
-
-private fun JsonObject.optArray(key: String): List<JsonObject> {
-    val arr: JsonArray = optElement(key)?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
-    return arr.mapNotNull { if (it.isJsonObject) it.asJsonObject else null }
-}
-
-private fun JsonObject.optStringList(key: String): List<String> {
-    val arr: JsonArray = optElement(key)?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
-    return arr.mapNotNull { if (it.isJsonPrimitive) it.asString else null }
-}
-
-private fun JsonObject.reqInstant(key: String): Instant =
-    optInstant(key) ?: throw ApiError.InvalidData()
-
-private fun JsonObject.optInstant(key: String): Instant? =
-    optString(key)?.let(MarketTime::parseInstant)

@@ -12,11 +12,11 @@ android/app/src/main/java/cn/oryjk/changuan/
 │   ├── update/                # AppUpdateChecker (外网->内网回退 + releases.json)、ApkDownloader (SHA-256)、ApkInstaller (Shizuku + FileProvider)
 │   └── ...                    # OkHttp 传输、显式 JSON DTO 映射边界（MarketGateway / AuthGateway）、分环境 SharedPreferences 持久化
 ├── presentation/
-│   ├── Theme.kt               # 澄境（Clarity）浅色/深色主题与语义调色板
-│   ├── designsystem/          # FinancialNumber (RobotoCondensed tnum)、PageHeader、SegmentedControl、LedgerRow、ClarityCard、MainBottomBar/MainSideRail
-│   ├── AppViewModel.kt        # 状态流、请求 generation 与认证 authEpoch 并发防护、30 秒自动巡检更新与多环境切换
+│   ├── Theme.kt               # 澄境（Clarity）浅色（#FFFFFF）与 X Lights Out OLED 纯黑深色（#000000）调色板
+│   ├── designsystem/          # FinancialNumber (RobotoCondensed tnum)、PageHeader、StarkUnderlineTabs、SegmentedControl、LedgerRow、TrackingComponents (跟踪中胶囊 / 六档成长图标 / 详情抽屉宿主)、MainBottomBar/MainSideRail
+│   ├── AppViewModel.kt        # 状态流、行情列表/详情抽屉/用户跟踪管理、请求 generation 与认证 authEpoch 并发防护、30 秒自动巡检更新与多环境切换
 │   ├── charts/                # 原生 Canvas K 线 + 成交量 + MACD 共享视窗图表（文字图层最后绘制）与分时曲线
-│   └── screens/               # 自适应主界面（行情 / 榜单 / 菜单）、结构解读面板、搜索全屏浮层、邮箱登录/注册弹窗、环境/安装设置与更新历史弹窗
+│   └── screens/               # 自适应主界面（行情 / 跟踪 / 榜单 / 菜单）、无卡片详情页 AssetDetailScreen、结构解读面板、搜索全屏浮层、邮箱登录/注册弹窗、环境/安装设置与更新历史弹窗
 └── app/                       # AppContainer 唯一组合根（按环境重建服务）、ChanGuanApplication 与 MainActivity
 ```
 

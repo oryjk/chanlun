@@ -9,6 +9,12 @@ class MarketUseCases(
     val writer: QuoteWriter,
 )
 
+class TrackingUseCases(
+    val reader: TrackingReader,
+    val commands: TrackingCommands,
+    val prefs: TrackingPreferenceStore,
+)
+
 class AppUpdateUseCases(
     val reader: AppUpdateReader,
     val downloader: AppUpdateDownloader,

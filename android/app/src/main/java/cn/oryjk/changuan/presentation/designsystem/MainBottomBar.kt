@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -27,13 +28,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CandlestickChart
 import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.outlined.CandlestickChart
 import androidx.compose.material.icons.outlined.Leaderboard
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -64,6 +69,7 @@ private val IconGlyphSize = 21.dp
 
 private fun RootTab.icons(): Pair<ImageVector, ImageVector> = when (this) {
     RootTab.MARKET -> Icons.Outlined.CandlestickChart to Icons.Filled.CandlestickChart
+    RootTab.TRACKING -> Icons.Outlined.TrackChanges to Icons.Filled.TrackChanges
     RootTab.RANKING -> Icons.Outlined.Leaderboard to Icons.Filled.Leaderboard
     RootTab.ACCOUNT -> Icons.Outlined.Menu to Icons.Filled.Menu
 }
@@ -73,6 +79,7 @@ fun MainBottomBar(
     currentTab: RootTab,
     onSelect: (RootTab) -> Unit,
     modifier: Modifier = Modifier,
+    hasTrackedAssets: Boolean = false,
 ) {
     val palette = LocalChanPalette.current
     Column(
@@ -81,7 +88,7 @@ fun MainBottomBar(
             .background(palette.cardSurface)
             .testTag("main-bottom-bar"),
     ) {
-        HorizontalDivider(color = palette.cardBorder, thickness = 1.dp)
+        HorizontalDivider(color = palette.cardBorder, thickness = 0.5.dp)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -94,6 +101,7 @@ fun MainBottomBar(
                 MainBottomBarItem(
                     tab = tab,
                     selected = tab == currentTab,
+                    showTrackedDot = tab == RootTab.TRACKING && hasTrackedAssets && currentTab != RootTab.TRACKING,
                     palette = palette,
                     onClick = { onSelect(tab) },
                 )
@@ -106,6 +114,7 @@ fun MainBottomBar(
 private fun RowScope.MainBottomBarItem(
     tab: RootTab,
     selected: Boolean,
+    showTrackedDot: Boolean,
     palette: ChanPalette,
     onClick: () -> Unit,
 ) {
@@ -154,11 +163,12 @@ private fun RowScope.MainBottomBarItem(
                         .background(palette.inkPrimary),
                 )
             }
-            Icon(
-                imageVector = if (selected) activeIcon else idleIcon,
-                contentDescription = null,
+            MainTabIcon(
+                idleIcon = idleIcon,
+                activeIcon = activeIcon,
+                selected = selected,
+                showDot = showTrackedDot,
                 tint = iconColor,
-                modifier = Modifier.size(IconGlyphSize),
             )
         }
         Spacer(Modifier.height(2.dp))
@@ -177,10 +187,39 @@ private fun RowScope.MainBottomBarItem(
 }
 
 @Composable
+private fun MainTabIcon(
+    idleIcon: ImageVector,
+    activeIcon: ImageVector,
+    selected: Boolean,
+    showDot: Boolean,
+    tint: Color,
+) {
+    Box {
+        Icon(
+            imageVector = if (selected) activeIcon else idleIcon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(IconGlyphSize),
+        )
+        if (showDot) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-1).dp)
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(tint),
+            )
+        }
+    }
+}
+
+@Composable
 fun MainSideRail(
     currentTab: RootTab,
     onSelect: (RootTab) -> Unit,
     modifier: Modifier = Modifier,
+    hasTrackedAssets: Boolean = false,
 ) {
     val palette = LocalChanPalette.current
     Row(modifier = modifier.fillMaxHeight()) {
@@ -200,6 +239,7 @@ fun MainSideRail(
                 val (idleIcon, activeIcon) = tab.icons()
                 val iconColor = if (selected) palette.cardSurface else palette.inkSecondary
                 val labelColor = if (selected) palette.inkPrimary else palette.inkSecondary
+                val showDot = tab == RootTab.TRACKING && hasTrackedAssets && !selected
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -209,7 +249,8 @@ fun MainSideRail(
                             role = Role.Tab,
                             onClick = { onSelect(tab) },
                         )
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 8.dp)
+                        .testTag("main-rail-${tab.rawValue}"),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -220,11 +261,12 @@ fun MainSideRail(
                             .background(if (selected) palette.inkPrimary else palette.cardSurface),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            imageVector = if (selected) activeIcon else idleIcon,
-                            contentDescription = null,
+                        MainTabIcon(
+                            idleIcon = idleIcon,
+                            activeIcon = activeIcon,
+                            selected = selected,
+                            showDot = showDot,
                             tint = iconColor,
-                            modifier = Modifier.size(20.dp),
                         )
                     }
                     Text(
@@ -240,7 +282,7 @@ fun MainSideRail(
         }
         Box(
             modifier = Modifier
-                .width(1.dp)
+                .width(0.5.dp)
                 .fillMaxHeight()
                 .background(palette.cardBorder),
         )

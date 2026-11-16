@@ -1,5 +1,12 @@
 # 变更日志
 
+## 2026-11-17 · 1.2.0（versionCode 5）· 新增「跟踪」Tab、无卡片股票/ETF 行情列表与详情页、OLED 纯黑深色模式及榜单显示修复
+
+- 变更（新增「跟踪」功能与第二项导航 Tab）：原生 Android 底部与平板侧栏扩展为 `行情 / 跟踪 / 榜单 / 菜单` 四项（第二项「跟踪」含活跃跟踪圆点提示）。新增后端 `GET /api/app-tracking`、`POST /api/app-tracking/start`、`POST /api/app-tracking/cancel`（SQLite 读写分离 + 账号注销联动清理）与前端 `TrackingScreen`，对齐策略家模拟跟踪体验（每只 ¥10,000 模拟本金记账、六档植物成长阶段图标与标签、累计/当日盈亏与天数排序、置顶/自定义顺序调整、批量结束确认、快速 `+ 跟踪` 选股弹窗及暖琥珀「跟踪中」嫩芽胶囊）。
+- 变更（「行情」改为无卡片股票/ETF 列表 + 上推详情抽屉）：新增后端 `GET /api/market/assets`（东方财富主源 + 新浪备用 + 排名趋势小线融合）与 `FallbackQuoteReader`（新浪批量/单只报价兜底）；Android「行情」首页改为无卡片 X × TradingView `0.5dp` 细分割线「股票 / ETF」资产列表，支持排序与快捷书签跟踪，点击任意资产或搜索结果打开无卡片 `AssetDetailScreen`（`AssetDetailSheetHost`），支持四周期 K 线/分时、结构解读与底部一键跟踪，返回保持原列表位置。
+- 变更（OLED 纯黑深色模式对齐策略家）：`DarkChanPalette` 与 `values-night/themes.xml` 对齐策略货架 `X Lights Out` 纯黑视觉规范（`backgroundCanvas = #000000`、`cardSurface = #000000`、`subtleSurface = #16181C`、`cardBorder = #2F3336`）。
+- 变更（榜单显示优化）：`RankingScreen` 使用顶部下划线分段切换「已确认同向 / 候选观察」，彻底移除每行内冗余的「已确认 / 候选」文字与徽标；将市场与买点标签下沉到副行，确保 4 个汉字以内的资产名称（如「贵州茅台」「宁德时代」）在窄屏下完整展示不截断（含 Robolectric 文本溢出自动化断言）。
+
 ## 2026-11-17 · 1.1.1（versionCode 4）· 菜单页对齐策略家无卡片极简细分割线排版与默认头像
 
 - 变更（菜单页去卡片改版）：`AccountScreen.kt` 对齐策略家 `ProfileScreen` 改用通栏无卡片 `LazyColumn` + `0.5dp` 边缘分割线 + 分组标题 + `54dp` 扁平设置行，外网环境/安装方式/应用下载页统一收口进「环境与安装器」底部弹层（「缠论结构术语」快入条放在顶部资料区下方）。

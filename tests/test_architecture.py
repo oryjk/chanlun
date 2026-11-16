@@ -135,6 +135,14 @@ class ArchitectureGuardTests(unittest.TestCase):
             for port in (RankingLease, RankingCheckpointWriter, RankingPublisher):
                 self.assertIsInstance(store, port)
 
+    def test_sqlite_tracking_store_implements_reader_and_writer_ports(self):
+        from backend.application.ports.tracking import AppTrackingReader, AppTrackingWriter
+        from backend.infrastructure.persistence.sqlite_app_tracking import SqliteAppTrackingStore
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SqliteAppTrackingStore(Path(tmp) / "t.sqlite3")
+            self.assertIsInstance(store, AppTrackingReader)
+            self.assertIsInstance(store, AppTrackingWriter)
+
 
 if __name__ == "__main__":
     unittest.main()

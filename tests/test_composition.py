@@ -15,6 +15,7 @@ def settings(tmp, enabled):
         False,
         ranking_store_path=str(Path(tmp) / "r.sqlite3"),
         ranking_enabled=enabled,
+        tracking_store_path=str(Path(tmp) / "t.sqlite3"),
     )
 
 

@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,11 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,7 +30,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cn.oryjk.changuan.domain.MarketFormat
 import cn.oryjk.changuan.domain.MarketTime
@@ -41,7 +45,6 @@ import cn.oryjk.changuan.presentation.AppUiState
 import cn.oryjk.changuan.presentation.LocalChanPalette
 import cn.oryjk.changuan.presentation.charts.RankingSparklineCanvas
 import cn.oryjk.changuan.presentation.designsystem.ActionPill
-import cn.oryjk.changuan.presentation.designsystem.ClarityCard
 import cn.oryjk.changuan.presentation.designsystem.FilterPill
 import cn.oryjk.changuan.presentation.designsystem.FinancialMetricGroup
 import cn.oryjk.changuan.presentation.designsystem.FixedHeaderPage
@@ -52,8 +55,9 @@ import cn.oryjk.changuan.presentation.designsystem.LedgerSparkline
 import cn.oryjk.changuan.presentation.designsystem.PageHeader
 import cn.oryjk.changuan.presentation.designsystem.RefreshableContent
 import cn.oryjk.changuan.presentation.designsystem.SegmentedControl
-import cn.oryjk.changuan.presentation.designsystem.StarkBadgeTag
+import cn.oryjk.changuan.presentation.designsystem.StarkUnderlineTabs
 import cn.oryjk.changuan.presentation.designsystem.SummaryItem
+import cn.oryjk.changuan.presentation.designsystem.TrackingActionPill
 import cn.oryjk.changuan.presentation.designsystem.tabular
 
 @Composable
@@ -61,8 +65,10 @@ fun RankingScreen(
     state: AppUiState,
     onRefresh: () -> Unit,
     onSelectStock: (Stock) -> Unit,
+    onToggleTrack: (Stock) -> Unit = {},
     modifier: Modifier = Modifier,
     applyStatusBarPadding: Boolean = true,
+    onTitleTextLayout: ((secid: String, TextLayoutResult) -> Unit)? = null,
 ) {
     val palette = LocalChanPalette.current
     val board = state.board
@@ -86,6 +92,7 @@ fun RankingScreen(
         "科创" -> RankingRules.filter(selectedGroupEntries, "科创")
         else -> selectedGroupEntries
     }
+    val trackedSecids = state.trackings.map { it.stock.secid }.toSet()
 
     val subtitle = buildString {
         if (board != null && !board.tradeDate.isNullOrBlank()) {
@@ -103,7 +110,7 @@ fun RankingScreen(
         applyStatusBarPadding = applyStatusBarPadding,
         header = {
             PageHeader(
-                title = "全市场榜单",
+                title = "榜单",
                 subtitle = subtitle,
                 action = {
                     HeaderIconAction(
@@ -127,10 +134,23 @@ fun RankingScreen(
                     .fillMaxSize()
                     .background(palette.backgroundCanvas),
             ) {
+                StarkUnderlineTabs(
+                    options = listOf(
+                        "已确认同向 (${confirmedList.size})",
+                        "候选观察 (${watchList.size})",
+                    ),
+                    selectedIndex = groupIdx,
+                    onSelect = {
+                        groupIdx = it
+                        expandedSecid = null
+                    },
+                    optionTag = { idx -> if (idx == 0) "ranking-tab-confirmed" else "ranking-tab-watch" },
+                )
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     SegmentedControl(
@@ -142,31 +162,6 @@ fun RankingScreen(
                         },
                         compact = true,
                     )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FilterPill(
-                            label = "已确认同向 (${confirmedList.size})",
-                            selected = groupIdx == 0,
-                            onClick = {
-                                groupIdx = 0
-                                expandedSecid = null
-                            },
-                        )
-                        FilterPill(
-                            label = "候选与观察 (${watchList.size})",
-                            selected = groupIdx == 1,
-                            onClick = {
-                                groupIdx = 1
-                                expandedSecid = null
-                            },
-                        )
-                    }
 
                     Row(
                         modifier = Modifier
@@ -218,24 +213,28 @@ fun RankingScreen(
                     }
 
                     state.boardError.isNotEmpty() && board == null -> {
-                        ClarityCard(
-                            modifier = Modifier.padding(16.dp),
-                            contentPadding = PaddingValues(16.dp),
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 28.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Text(
                                 text = state.boardError,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = palette.warmAmberText,
+                                textAlign = TextAlign.Center,
                             )
                             ActionPill(text = "重新加载", onClick = onRefresh)
                         }
                     }
 
                     board != null && RankingRules.isFirstBuildPending(board) -> {
-                        ClarityCard(
-                            modifier = Modifier.padding(16.dp),
-                            contentPadding = PaddingValues(16.dp),
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 28.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text(
@@ -266,7 +265,7 @@ fun RankingScreen(
                                 color = palette.inkPrimary,
                             )
                             Text(
-                                text = "可切换「候选与观察」或更换市场筛选查看其余结构。",
+                                text = "可切换「候选观察」或更换市场筛选查看其余结构。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = palette.inkMuted,
                             )
@@ -274,15 +273,20 @@ fun RankingScreen(
                     }
 
                     else -> {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(filteredEntries, key = { it.stock.secid }) { entry ->
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("ranking-list"),
+                        ) {
+                            itemsIndexed(filteredEntries, key = { _, e -> e.stock.secid }) { index, entry ->
                                 val isExpanded = expandedSecid == entry.stock.secid
+                                val isTracked = entry.stock.secid in trackedSecids
+                                val isPending = entry.stock.secid in state.pendingTrackSecids
                                 val point = entry.latestPoint
                                 val relPct = RankingRules.relativeFromPivotPercent(entry.latest, point)
                                 val decimals = entry.stock.decimals
                                 val headlineTone = palette.directionColor(relPct ?: entry.changePercent)
                                 val signalLabel = point?.label ?: SignalRules.biasLabel(entry.bias)
-                                val isConfirmed = point?.confirmed == true
                                 val signalDateText = point?.let {
                                     MarketTime.formatDate(it.time, "yyyy-MM-dd")
                                 } ?: (board?.tradeDate ?: "—")
@@ -302,36 +306,31 @@ fun RankingScreen(
                                     onToggleExpand = {
                                         expandedSecid = if (isExpanded) null else entry.stock.secid
                                     },
-                                    titleSuffix = {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            StarkBadgeTag(text = entry.stock.market)
-                                            StarkBadgeTag(
-                                                text = signalLabel,
-                                                inverted = isConfirmed,
+                                    showDivider = index < filteredEntries.lastIndex,
+                                    modifier = Modifier.testTag("ranking-row-${entry.stock.secid}"),
+                                    onTitleTextLayout = onTitleTextLayout?.let { callback ->
+                                        { result -> callback(entry.stock.secid, result) }
+                                    },
+                                    titleSuffix = if (isTracked) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Filled.Bookmark,
+                                                contentDescription = "已跟踪",
+                                                tint = palette.warmAmber,
+                                                modifier = Modifier.size(15.dp),
                                             )
                                         }
+                                    } else {
+                                        null
                                     },
                                     metaContent = {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(
-                                                text = entry.stock.symbol,
-                                                style = MaterialTheme.typography.labelSmall.tabular(),
-                                                color = palette.inkMuted,
-                                            )
-                                            Text(
-                                                text = "端点 $signalDateText",
-                                                style = MaterialTheme.typography.labelSmall.tabular(),
-                                                color = palette.inkSecondary,
-                                            )
-                                            Text(
-                                                text = if (isConfirmed) "已确认" else "候选",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = if (isConfirmed) palette.primaryBrand else palette.inkMuted,
-                                            )
-                                        }
+                                        Text(
+                                            text = "${entry.stock.symbol}  ${entry.stock.market}  $signalLabel  端点 $signalDateText",
+                                            style = MaterialTheme.typography.labelSmall.tabular(),
+                                            color = palette.inkMuted,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     },
                                     sparkline = {
                                         LedgerSparkline(
@@ -386,19 +385,20 @@ fun RankingScreen(
                                         )
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Text(
-                                                text = "首次识别与确认时间未回溯，仅供结构观察",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = palette.inkMuted,
+                                            ActionPill(
+                                                text = "查看详情",
+                                                outlined = true,
+                                                onClick = { onSelectStock(entry.stock) },
                                                 modifier = Modifier.weight(1f),
                                             )
-                                            Spacer(Modifier.width(8.dp))
-                                            ActionPill(
-                                                text = "查看 K 线",
-                                                onClick = { onSelectStock(entry.stock) },
+                                            TrackingActionPill(
+                                                tracked = isTracked,
+                                                pending = isPending,
+                                                onClick = { onToggleTrack(entry.stock) },
+                                                modifier = Modifier.weight(1f),
                                             )
                                         }
                                     },

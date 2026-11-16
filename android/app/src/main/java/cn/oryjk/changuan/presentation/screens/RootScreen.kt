@@ -31,6 +31,7 @@ import cn.oryjk.changuan.BuildConfig
 import cn.oryjk.changuan.domain.RootTab
 import cn.oryjk.changuan.presentation.AppViewModel
 import cn.oryjk.changuan.presentation.LocalChanPalette
+import cn.oryjk.changuan.presentation.designsystem.AssetDetailSheetHost
 import cn.oryjk.changuan.presentation.designsystem.ClarityRadius
 import cn.oryjk.changuan.presentation.designsystem.MainBottomBar
 import cn.oryjk.changuan.presentation.designsystem.MainSideRail
@@ -67,33 +68,51 @@ fun RootScreen(
         }
     }
 
+    val openSearchScreen = {
+        viewModel.searchStocks("")
+        showSearch = true
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val useRail = maxWidth >= 840.dp
+            val hasTrackedAssets = state.trackings.isNotEmpty()
 
             @Composable
             fun ActiveTabContent(innerModifier: Modifier) {
                 when (state.tab) {
                     RootTab.MARKET -> MarketScreen(
                         state = state,
-                        onSelectTimeframe = viewModel::changeTimeframe,
-                        onToggleLayer = viewModel::toggleLayer,
-                        onRefresh = { viewModel.reload(refresh = true) },
-                        onOpenSearch = {
-                            viewModel.searchStocks("")
-                            showSearch = true
-                        },
-                        onOpenGlossary = { showGlossary = true },
+                        onSelectCategory = viewModel::selectAssetCategory,
+                        onToggleSort = viewModel::toggleAssetSort,
+                        onRefresh = { viewModel.reloadAssets(forceRefresh = true) },
+                        onOpenAsset = { stock -> viewModel.openAssetDetail(stock) },
+                        onToggleTrack = viewModel::toggleTracking,
+                        onOpenSearch = openSearchScreen,
+                        modifier = innerModifier,
+                    )
+
+                    RootTab.TRACKING -> TrackingScreen(
+                        state = state,
+                        onOpenAuth = { viewModel.openAuthDialog() },
+                        onGoMarket = { viewModel.changeTab(RootTab.MARKET) },
+                        onRefresh = { viewModel.reloadTrackings(forceRefresh = true) },
+                        onEnsureCatalog = { viewModel.reloadAssets(forceRefresh = false) },
+                        onStartTrack = viewModel::startTracking,
+                        onCancelTracks = viewModel::cancelTrackings,
+                        onOpenDetail = { stock -> viewModel.openAssetDetail(stock, forceDaily = true) },
+                        onOpenSearch = openSearchScreen,
+                        onToggleSort = viewModel::toggleTrackingSort,
+                        onTogglePin = viewModel::togglePinTracking,
+                        onMoveTrack = viewModel::moveTracking,
                         modifier = innerModifier,
                     )
 
                     RootTab.RANKING -> RankingScreen(
                         state = state,
                         onRefresh = { viewModel.reload(refresh = true) },
-                        onSelectStock = { stock ->
-                            viewModel.selectStock(stock, forceDaily = true)
-                            viewModel.changeTab(RootTab.MARKET)
-                        },
+                        onSelectStock = { stock -> viewModel.openAssetDetail(stock, forceDaily = true) },
+                        onToggleTrack = viewModel::toggleTracking,
                         modifier = innerModifier,
                     )
 
@@ -123,6 +142,7 @@ fun RootScreen(
                 Row(modifier = Modifier.fillMaxSize()) {
                     MainSideRail(
                         currentTab = state.tab,
+                        hasTrackedAssets = hasTrackedAssets,
                         onSelect = viewModel::changeTab,
                     )
                     Scaffold(
@@ -145,6 +165,7 @@ fun RootScreen(
                     bottomBar = {
                         MainBottomBar(
                             currentTab = state.tab,
+                            hasTrackedAssets = hasTrackedAssets,
                             onSelect = viewModel::changeTab,
                         )
                     },
@@ -156,6 +177,31 @@ fun RootScreen(
                     )
                 }
             }
+        }
+
+        BackHandler(enabled = state.detailSheetOpen && !showSearch) {
+            viewModel.closeAssetDetail()
+        }
+
+        AssetDetailSheetHost(
+            activeKey = if (state.detailSheetOpen) state.stock.secid else null,
+            onDismissRequest = {
+                viewModel.closeAssetDetail()
+                true
+            },
+        ) { shownKey, drag ->
+            AssetDetailScreen(
+                state = state,
+                onBack = viewModel::closeAssetDetail,
+                onSelectTimeframe = viewModel::changeTimeframe,
+                onToggleLayer = viewModel::toggleLayer,
+                onRefresh = { viewModel.reload(refresh = true) },
+                onOpenSearch = openSearchScreen,
+                onOpenGlossary = { showGlossary = true },
+                onToggleTrack = { viewModel.toggleTracking(state.stock) },
+                dragHeaderModifier = drag.headerModifier(shownKey),
+                insideSheet = true,
+            )
         }
 
         AnimatedVisibility(
@@ -174,7 +220,7 @@ fun RootScreen(
                 onQueryChange = viewModel::searchStocks,
                 onSelectStock = { stock ->
                     showSearch = false
-                    viewModel.selectStock(stock)
+                    viewModel.openAssetDetail(stock)
                 },
                 onBack = { showSearch = false },
             )

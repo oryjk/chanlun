@@ -3,15 +3,28 @@ package cn.oryjk.changuan
 import cn.oryjk.changuan.application.AuthCommands
 import cn.oryjk.changuan.application.AuthReader
 import cn.oryjk.changuan.application.AuthUseCases
+import cn.oryjk.changuan.application.EnvironmentServices
+import cn.oryjk.changuan.application.EnvironmentServicesFactory
+import cn.oryjk.changuan.application.InMemoryEnvironmentStore
+import cn.oryjk.changuan.application.InMemoryThemePreferenceStore
+import cn.oryjk.changuan.application.InMemoryTrackingPreferenceStore
 import cn.oryjk.changuan.application.MarketReader
 import cn.oryjk.changuan.application.MarketUseCases
 import cn.oryjk.changuan.application.QuoteWriter
 import cn.oryjk.changuan.application.RouteStore
 import cn.oryjk.changuan.application.SessionStore
+import cn.oryjk.changuan.application.TrackingCommands
+import cn.oryjk.changuan.application.TrackingReader
+import cn.oryjk.changuan.application.TrackingUseCases
 import cn.oryjk.changuan.domain.AppLoginResult
 import cn.oryjk.changuan.domain.AppSession
 import cn.oryjk.changuan.domain.AppUser
+import cn.oryjk.changuan.domain.AssetCategory
+import cn.oryjk.changuan.domain.AssetSortField
+import cn.oryjk.changuan.domain.DefaultStocks
 import cn.oryjk.changuan.domain.EmailCodeSent
+import cn.oryjk.changuan.domain.MarketAssetItem
+import cn.oryjk.changuan.domain.MarketAssetList
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.QuoteSeries
@@ -20,6 +33,8 @@ import cn.oryjk.changuan.domain.RootTab
 import cn.oryjk.changuan.domain.SignalConfluence
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.domain.Timeframe
+import cn.oryjk.changuan.domain.TrackedAsset
+import cn.oryjk.changuan.domain.TrackingOverview
 import cn.oryjk.changuan.presentation.AppViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -147,5 +162,103 @@ class AuthFlowTest {
         restoreJob.join()
         advanceUntilIdle()
         assertNull(vm.state.value.user)
+    }
+
+    @Test
+    fun `tracking requires login for guests and syncs after login and logout`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(dispatcher)
+        val store = InMemorySessionStore()
+        val authGateway = FakeAuthGateway()
+        val marketGateway = object : MarketReader, QuoteWriter {
+            override suspend fun search(query: String): List<Stock> = emptyList()
+            override suspend fun snapshot(secid: String, timeframe: Timeframe, refresh: Boolean): MarketSnapshot =
+                error("not used")
+            override suspend fun quote(secid: String): MarketQuote = error("not used")
+            override suspend fun series(secid: String): QuoteSeries = error("not used")
+            override suspend fun rankings(): RankingBoard = error("not used")
+            override suspend fun confluence(secid: String): SignalConfluence = error("not used")
+            override suspend fun record(quote: MarketQuote): QuoteSeries = error("not used")
+            override suspend fun assets(
+                category: AssetCategory,
+                sortField: AssetSortField,
+                descending: Boolean,
+                limit: Int,
+            ): MarketAssetList = MarketAssetList(
+                category = category,
+                asOfDate = "2026-11-16",
+                items = listOf(
+                    MarketAssetItem(
+                        stock = DefaultStocks.KWEICHOW_MOUTAI,
+                        latest = 1453.9,
+                        change = 18.64,
+                        changePercent = 1.3,
+                        open = 1426.3,
+                        high = 1454.93,
+                        low = 1425.0,
+                        previousClose = 1435.26,
+                        volume = 1000.0,
+                        amount = 1453900.0,
+                    ),
+                ),
+            )
+        }
+        val trackedSecids = mutableSetOf<String>()
+        val trackingGateway = object : TrackingReader, TrackingCommands {
+            override suspend fun fetchTrackings(): TrackingOverview = TrackingOverview(
+                asOfDate = "2026-11-16",
+                items = trackedSecids.map { secid ->
+                    TrackedAsset(
+                        stock = Stock(secid, secid.substringBefore('.'), "贵州茅台", "沪A"),
+                        startDate = "2026-11-16",
+                        startPrice = 1453.9,
+                        latestPrice = 1453.9,
+                        dayReturnPct = 0.0,
+                        dayProfit = 0.0,
+                        cumulativeReturnPct = 0.0,
+                        cumulativeProfit = 0.0,
+                        currentValue = 10_000.0,
+                    )
+                },
+            )
+
+            override suspend fun startTracking(secid: String) {
+                trackedSecids.add(secid)
+            }
+
+            override suspend fun cancelTrackings(secids: List<String>) {
+                trackedSecids.removeAll(secids.toSet())
+            }
+        }
+        val vm = AppViewModel(
+            servicesFactory = EnvironmentServicesFactory {
+                EnvironmentServices(
+                    market = MarketUseCases(marketGateway, marketGateway),
+                    auth = AuthUseCases(authGateway, authGateway, store),
+                    tracking = TrackingUseCases(trackingGateway, trackingGateway, InMemoryTrackingPreferenceStore()),
+                )
+            },
+            environmentStore = InMemoryEnvironmentStore(),
+            themeStore = InMemoryThemePreferenceStore(),
+            routes = InMemoryRouteStore(),
+            externalScope = scope,
+        )
+
+        // Guest tapping track opens login dialog instead of calling API
+        vm.startTracking(DefaultStocks.KWEICHOW_MOUTAI)
+        assertEquals(true, vm.state.value.showAuthDialog)
+        vm.closeAuthDialog()
+
+        // After login, tracking works and logout clears local tracking state
+        vm.loginWithEmail("trader@example.com", "StrongPass#123")
+        vm.activate(true)
+        vm.startTracking(DefaultStocks.KWEICHOW_MOUTAI)
+        advanceUntilIdle()
+        assertEquals(listOf("600519.SH"), vm.state.value.trackings.map { it.stock.secid })
+
+        vm.logout()
+        advanceUntilIdle()
+        assertEquals(emptyList<TrackedAsset>(), vm.state.value.trackings)
+        vm.activate(false)
     }
 }

@@ -1,8 +1,10 @@
 package cn.oryjk.changuan
 
-import cn.oryjk.changuan.infrastructure.update.AppUpdateChecker
+import cn.oryjk.changuan.domain.AssetCategory
 import cn.oryjk.changuan.infrastructure.AuthGateway
 import cn.oryjk.changuan.infrastructure.MarketGateway
+import cn.oryjk.changuan.infrastructure.TrackingGateway
+import cn.oryjk.changuan.infrastructure.update.AppUpdateChecker
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -111,5 +113,63 @@ class DtoMappingTest {
             update?.apkUrl,
         )
         assertEquals("abcdef0123456789", update?.sha256)
+    }
+
+    @Test
+    fun `market and tracking gateways decode asset list and tracking overview`() {
+        val assetJson = """
+            {
+              "category": "etf",
+              "as_of_date": "2026-11-16",
+              "items": [
+                {
+                  "stock": {"secid": "510300.SH", "symbol": "510300", "name": "沪深300ETF", "market": "ETF"},
+                  "latest": 4.182,
+                  "change": 0.039,
+                  "change_percent": 0.94,
+                  "open": 4.150,
+                  "high": 4.195,
+                  "low": 4.132,
+                  "previous_close": 4.143,
+                  "volume": 1200000,
+                  "amount": 5018400.0,
+                  "sparkline": [4.09, 4.12, 4.182],
+                  "signal_label": "二类买点"
+                }
+              ]
+            }
+        """.trimIndent()
+        val parsedList = MarketGateway.parseAssetList(JsonParser.parseString(assetJson).asJsonObject)
+        assertEquals(AssetCategory.ETF, parsedList.category)
+        assertEquals("2026-11-16", parsedList.asOfDate)
+        assertEquals(1, parsedList.items.size)
+        assertEquals("510300.SH", parsedList.items.first().stock.secid)
+        assertEquals(3, parsedList.items.first().sparkline.size)
+        assertEquals("二类买点", parsedList.items.first().signalLabel)
+
+        val trackingJson = """
+            {
+              "as_of_date": "2026-11-16",
+              "items": [
+                {
+                  "stock": {"secid": "600519.SH", "symbol": "600519", "name": "贵州茅台", "market": "沪A"},
+                  "start_date": "2026-11-10",
+                  "start_price": 1400.0,
+                  "latest_price": 1453.9,
+                  "day_return_pct": 1.30,
+                  "day_profit": 133.20,
+                  "cumulative_return_pct": 3.85,
+                  "cumulative_profit": 385.0,
+                  "current_value": 10385.0,
+                  "sparkline": [1400.0, 1425.0, 1453.9]
+                }
+              ]
+            }
+        """.trimIndent()
+        val overview = TrackingGateway.parseOverview(JsonParser.parseString(trackingJson).asJsonObject)
+        assertEquals("2026-11-16", overview.asOfDate)
+        assertEquals(1, overview.items.size)
+        assertEquals(10385.0, overview.items.first().currentValue, 1e-6)
+        assertEquals(385.0, overview.items.first().cumulativeProfit, 1e-6)
     }
 }

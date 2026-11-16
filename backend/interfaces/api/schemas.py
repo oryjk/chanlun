@@ -281,3 +281,24 @@ class WebviewLoginRequest(BaseModel):
 
 class MiniProgramLinkResponse(ApiModel):
     url: str
+
+
+class MarketAssetItemResponse(ApiModel):
+    stock: StockResponse
+    latest: float
+    change: float
+    change_percent: float
+    open: float
+    high: float
+    low: float
+    previous_close: float
+    volume: int
+    amount: float
+    sparkline: tuple[float, ...] = ()
+    signal_label: str | None = None
+
+
+class MarketAssetListResponse(ApiModel):
+    category: str
+    as_of_date: str | None = None
+    items: tuple[MarketAssetItemResponse, ...]

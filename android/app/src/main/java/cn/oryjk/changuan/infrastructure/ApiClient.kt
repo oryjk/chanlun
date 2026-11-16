@@ -1,9 +1,12 @@
 package cn.oryjk.changuan.infrastructure
 
 import cn.oryjk.changuan.application.SessionStore
+import cn.oryjk.changuan.domain.MarketTime
+import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -165,3 +168,32 @@ internal fun JsonObject.reqBoolean(key: String): Boolean =
 
 internal fun JsonObject.optBoolean(key: String): Boolean? =
     optElement(key)?.takeIf { it.isJsonPrimitive }?.asBoolean
+
+internal fun JsonObject.reqObject(key: String): JsonObject =
+    optObject(key) ?: throw ApiError.InvalidData()
+
+internal fun JsonObject.optObject(key: String): JsonObject? =
+    optElement(key)?.takeIf { it.isJsonObject }?.asJsonObject
+
+internal fun JsonObject.optArray(key: String): List<JsonObject> {
+    val arr: JsonArray = optElement(key)?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
+    return arr.mapNotNull { if (it.isJsonObject) it.asJsonObject else null }
+}
+
+internal fun JsonObject.optStringList(key: String): List<String> {
+    val arr: JsonArray = optElement(key)?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
+    return arr.mapNotNull { if (it.isJsonPrimitive) it.asString else null }
+}
+
+internal fun JsonObject.optDoubleList(key: String): List<Double> {
+    val arr: JsonArray = optElement(key)?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
+    return arr.mapNotNull { el ->
+        el.takeIf { it.isJsonPrimitive }?.asDouble?.takeIf { it.isFinite() }
+    }
+}
+
+internal fun JsonObject.reqInstant(key: String): Instant =
+    optInstant(key) ?: throw ApiError.InvalidData()
+
+internal fun JsonObject.optInstant(key: String): Instant? =
+    optString(key)?.let(MarketTime::parseInstant)

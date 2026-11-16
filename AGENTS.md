@@ -20,6 +20,7 @@
 backend/
 ├── domain/
 │   ├── models.py              # 不可变领域模型、周期和值校验
+│   ├── tracking.py            # 资产清单与模拟跟踪纯领域模型与盈亏计算规则
 │   ├── security.py            # 证券标识值对象 SecurityId 与交易所枚举 Exchange（SH/SZ/BJ）
 │   ├── errors.py              # 与 HTTP 状态码无关的领域异常
 │   └── services/              # 缠论分析、市场分析链路、MACD、背驰与买卖点、信号质量证据、多级别联立、结构判断、分时序列合并等纯领域算法
@@ -27,20 +28,21 @@ backend/
 │   ├── security_ids.py        # 证券标识规范化（兼容旧格式输入并转为规范格式）与持久化旧文件名映射
 │   ├── ranking_jobs.py        # 榜单后台任务状态（进度、检查点条目、读取视图）
 │   ├── ports/
-│   │   ├── readers.py         # 查询端口（行情、报价、分时、搜索、全市场清单、收盘日、榜单快照、小程序外链）
+│   │   ├── readers.py         # 查询端口（行情、单只/批量报价、市场资产清单、分时、搜索、全市场清单、收盘日、榜单快照、小程序外链）
 │   │   ├── writers.py         # 写入端口（报价采样、榜单租约、检查点、快照发布）
+│   │   ├── tracking.py        # 原生端用户跟踪持久化读写端口
 │   │   ├── clock.py           # 时钟端口（带时区当前时间）
 │   │   └── auth.py            # 身份兑换网关与会话编解码端口
-│   ├── queries/               # 只读用例（含复用快照查询的榜单与多级别联立、当前用户、小程序外链）
-│   └── commands/              # 写用例（记录报价采样、一次性 code 登录、构建收盘榜单）
+│   ├── queries/               # 只读用例（行情、市场股票/ETF 清单、用户跟踪总览、复用快照查询的榜单与多级别联立、当前用户、小程序外链）
+│   └── commands/              # 写用例（记录报价采样、一次性 code 登录、构建收盘榜单、开始/结束用户跟踪）
 ├── infrastructure/
 │   ├── http/                  # 通用传输客户端
-│   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池读取适配器；新浪备用 K 线（按新浪前复权因子换算，与东方财富口径一致）与证券清单，以及主备切换装饰器（主源连续失败时短时熔断）
+│   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池与资产清单适配器；新浪备用 K 线（前复权）、实时/批量报价、证券清单与资产清单，以及主备切换装饰器（主源连续失败时短时熔断）
 │   ├── cache/                 # 缓存装饰器，不污染用例
-│   ├── persistence/           # 本地 JSON 报价存储、SQLite 榜单快照/租约/检查点，各自实现独立 Reader/Writer
+│   ├── persistence/           # 本地 JSON 报价存储、SQLite 榜单快照/租约/检查点、SQLite 用户跟踪存储（只读查询+独立写入）
 │   └── auth/                  # 报名系统网关（code 兑换身份、URL Link）与 HMAC 签名会话
-├── interfaces/api/            # FastAPI 路由（行情 routes.py、登录 auth_routes.py）、Pydantic DTO、异常映射
-└── app/                       # 组合根、环境配置 settings.py、应用启动与收盘榜单后台生命周期
+├── interfaces/api/            # FastAPI 路由（行情 routes.py、H5 登录 auth_routes.py、原生登录 app_auth_routes.py、原生跟踪 app_tracking_routes.py）、Pydantic DTO、异常映射
+└── app/                       # 组合根（container.py / tracking.py / app_auth.py）、环境配置 settings.py、应用启动与收盘榜单后台生命周期
 ```
 
 ### 证券标识约定
@@ -172,7 +174,8 @@ cd frontend && bun test src && bun run build
 
 ## 八、原生 Android（手机与平板）
 
-- `android/` 使用 100% Kotlin（`2.0.21`）+ Jetpack Compose（`Compose BOM 2024.12.01`）+ 原生 `Canvas` K 线/分时图表，`compileSdk = 35`、`minSdk = 26`，同一应用自适应手机（底部导航 `行情 / 榜单 / 菜单`、单列布局）与平板/横屏宽屏（左侧导航栏、双栏主从布局）。视觉遵循澄境风格（`presentation/Theme.kt` 的 `ChanGuanTheme` / `LocalChanPalette` + `presentation/designsystem/` 组件 + `RobotoCondensed` `tnum` 等宽数字），支持系统 / 浅色 / 深色三种外观切换；「菜单」页内置 API 服务环境切换，默认使用 `开发环境（AI外网）`（`https://ai.oryjk.cn:82/chanlun-dev/`），并可选 `开发环境（233内网）`（`http://172.16.60.233:8000/`）与 `生产环境`（`https://match.oryjk.cn/chanlun/`），各环境登录会话按环境隔离持久化。`android/README.md` 记录构建与邮箱登录配置步骤。
+- `android/` 使用 100% Kotlin（`2.0.21`）+ Jetpack Compose（`Compose BOM 2024.12.01`）+ 原生 `Canvas` K 线/分时图表，`compileSdk = 35`、`minSdk = 26`，同一应用自适应手机（底部导航 `行情 / 跟踪 / 榜单 / 菜单` 4 项、单列布局）与平板/横屏宽屏（左侧导航栏）。视觉严格对齐策略货架 X × TradingView 无卡片极简细分割线（`0.5dp`）风格与 OLED 纯黑深色模式（`backgroundCanvas = #000000`、`cardSurface = #000000`、`subtleSurface = #16181C`、`cardBorder = #2F3336`，`RobotoCondensed` `tnum` 等宽数字），支持系统 / 浅色 / 深色三种外观切换；「菜单」页内置 API 服务环境切换，默认使用 `开发环境（AI外网）`（`https://ai.oryjk.cn:82/chanlun-dev/`），并可选 `开发环境（233内网）`（`http://172.16.60.233:8000/`）与 `生产环境`（`https://match.oryjk.cn/chanlun/`），各环境登录会话按环境隔离持久化。`android/README.md` 记录构建与邮箱登录配置步骤。
+- 行情与详情交互流程：**行情** Tab 为无卡片「股票 / ETF」双分类实时列表（支持成交额/涨跌幅/最新价排序、走势小线、书签快捷跟踪），点击任一标的或搜索结果在无卡片全屏上推抽屉 `AssetDetailSheetHost`（`AssetDetailScreen`）中打开多周期 K 线/分时与缠论结构详情并支持底部一键 `+ 跟踪 / 跟踪中`，返回时保持原列表滚动位置；**跟踪** Tab 对应策略货架模拟跟踪（每只 ¥10,000 模拟本金记账、6 档成长阶段徽章「萌芽 → 年轮」、汇总指标、置顶/排序/批量管理，`GET /api/app-tracking`、`POST /api/app-tracking/start`、`POST /api/app-tracking/cancel`）；**榜单** Tab 使用顶部下划线分段切换已确认同向与候选观察，列表行内不重复展示已确认/候选徽标且名称列保留足够宽度确保 4 字以内资产名完整展示不截断。
 - 原生 Android 同样遵循 `Presentation -> Application -> Domain`，`Infrastructure` 实现读写/身份/环境/更新端口，`App`（`AppContainer.kt`）是唯一组合根。`domain` 与 `application` 不导入 `android.*`、`androidx.*`、`okhttp3.*` 或 `com.google.gson.*`，`presentation` 不导入 `infrastructure`，由 `android/app/src/test/java/cn/oryjk/changuan/ArchitectureTest.kt` 自动守护。
 - Android 端登录采用 **账号密码登录 + 邮箱验证码注册**（游客可使用全部行情与榜单功能）：
   - `POST /api/app-auth/email/code`：校验未注册邮箱并发送 6 位数字验证码（10 分钟有效、60 秒发送冷却，最多校验 5 次）。

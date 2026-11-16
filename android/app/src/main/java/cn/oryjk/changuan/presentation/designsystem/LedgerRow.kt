@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cn.oryjk.changuan.presentation.ChanPalette
@@ -83,6 +84,7 @@ fun LedgerRow(
     headerStateDescription: String? = null,
     trailingContent: (@Composable RowScope.() -> Unit)? = null,
     showDivider: Boolean = true,
+    onTitleTextLayout: ((TextLayoutResult) -> Unit)? = null,
     expandedContent: @Composable ColumnScope.() -> Unit = {},
 ) {
     val palette = LocalChanPalette.current
@@ -172,6 +174,7 @@ fun LedgerRow(
                         color = palette.inkPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        onTextLayout = onTitleTextLayout ?: {},
                         modifier = if (titleSuffix != null) Modifier.weight(1f, fill = false) else Modifier,
                     )
                     if (titleSuffix != null) {

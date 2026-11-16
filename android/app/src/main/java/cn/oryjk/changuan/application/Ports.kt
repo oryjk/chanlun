@@ -4,9 +4,12 @@ import cn.oryjk.changuan.domain.AppLoginResult
 import cn.oryjk.changuan.domain.AppSession
 import cn.oryjk.changuan.domain.AppThemeMode
 import cn.oryjk.changuan.domain.AppUpdateInfo
+import cn.oryjk.changuan.domain.AssetCategory
+import cn.oryjk.changuan.domain.AssetSortField
 import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.domain.DownloadedApk
 import cn.oryjk.changuan.domain.EmailCodeSent
+import cn.oryjk.changuan.domain.MarketAssetList
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.QuoteSeries
@@ -18,6 +21,7 @@ import cn.oryjk.changuan.domain.SignalConfluence
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.domain.SystemInstallResult
 import cn.oryjk.changuan.domain.Timeframe
+import cn.oryjk.changuan.domain.TrackingOverview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +33,45 @@ interface MarketReader {
     suspend fun series(secid: String): QuoteSeries
     suspend fun rankings(): RankingBoard
     suspend fun confluence(secid: String): SignalConfluence
+    suspend fun assets(
+        category: AssetCategory,
+        sortField: AssetSortField = AssetSortField.AMOUNT,
+        descending: Boolean = true,
+        limit: Int = 60,
+    ): MarketAssetList = MarketAssetList(category = category, asOfDate = null, items = emptyList())
+}
+
+interface TrackingReader {
+    suspend fun fetchTrackings(): TrackingOverview
+}
+
+interface TrackingCommands {
+    suspend fun startTracking(secid: String)
+    suspend fun cancelTrackings(secids: List<String>)
+}
+
+interface TrackingPreferenceStore {
+    fun pinnedSecids(userId: String): Set<String>
+    fun savePinnedSecids(userId: String, secids: Set<String>)
+    fun customOrder(userId: String): List<String>
+    fun saveCustomOrder(userId: String, order: List<String>)
+}
+
+class InMemoryTrackingPreferenceStore : TrackingPreferenceStore {
+    private val pinnedByUser = mutableMapOf<String, Set<String>>()
+    private val orderByUser = mutableMapOf<String, List<String>>()
+
+    override fun pinnedSecids(userId: String): Set<String> = pinnedByUser[userId].orEmpty()
+
+    override fun savePinnedSecids(userId: String, secids: Set<String>) {
+        pinnedByUser[userId] = secids
+    }
+
+    override fun customOrder(userId: String): List<String> = orderByUser[userId].orEmpty()
+
+    override fun saveCustomOrder(userId: String, order: List<String>) {
+        orderByUser[userId] = order
+    }
 }
 
 interface QuoteWriter {
@@ -79,6 +122,7 @@ class InMemoryThemePreferenceStore(
 data class EnvironmentServices(
     val market: MarketUseCases,
     val auth: AuthUseCases,
+    val tracking: TrackingUseCases? = null,
 )
 
 fun interface EnvironmentServicesFactory {

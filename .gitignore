@@ -30,6 +30,7 @@ logs/
 var/quotes/
 var/rankings/
 var/accounts/
+var/trackings/
 
 # Native Apple builds and local signing configuration
 ios/Local.xcconfig
