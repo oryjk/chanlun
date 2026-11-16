@@ -1,5 +1,12 @@
 # 变更日志
 
+## 2026-11-17 · 原生 Android 澄境视觉重构、飞书邮箱注册与 ai:82 双通道更新
+
+- 变更：参考策略货架 Android 澄境（Clarity）设计体系全面重构原生 Android 界面（`ChanGuanTheme` 浅色/深色、`RobotoCondensed` 等宽表格数字、`FixedHeaderPage`、`SegmentedControl`、`LedgerRow` 手风琴展开行、全屏 `StockSearchScreen` 浮层、澄境登录/注册弹窗、`行情 / 榜单 / 菜单` 底部与平板侧边导航），版本升级为 `1.1.0`（`versionCode = 3`）。
+- 变更：服务端新增 `.env` 加载（`backend/app/env.py`），兼容飞书 `SMTP_*` / `EMAIL_CODE_PEPPER` 环境变量与邮件发送实现，启用邮箱验证码注册与密码登录；Android 端「菜单」支持在 `开发环境（AI外网）`（默认 `https://ai.oryjk.cn:82/chanlun-dev/`）、`开发环境（233内网）` 与 `生产环境` 间切换并按环境隔离登录会话。
+- 变更：打通本机网关 `/chanlun-dev/` 与 `out109` Nginx `https://ai.oryjk.cn:82/chanlun-dev/`、`/chanlun-android/` 公网转发；升级客户端更新模块支持外网/内网自动回退、SHA-256 与签名校验、`releases.json` 历史展示、Shizuku 与系统安装双通道，并完善 `publish-apk.sh` 双入口校验。
+- 原因：统一客户端干净克制的专业行情观感，并打通公网与内网一致的注册登录、API 访问和自动更新闭环。
+
 ## 2026-11-10 · 原生 iPhone 和 iPad 源码与 Apple 登录接入
 
 - 变更：新增原生 App 源码及共享 Xcode 工程，使用 SwiftUI 页面和 UIKit 图表，包含搜索、四周期 K 线、缠论图层、MACD、信号证据、多级别联立、分时与收盘榜单；适配 iPhone/iPad 与前后台请求生命周期。

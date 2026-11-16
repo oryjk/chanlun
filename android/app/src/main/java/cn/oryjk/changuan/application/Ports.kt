@@ -2,16 +2,25 @@ package cn.oryjk.changuan.application
 
 import cn.oryjk.changuan.domain.AppLoginResult
 import cn.oryjk.changuan.domain.AppSession
+import cn.oryjk.changuan.domain.AppThemeMode
 import cn.oryjk.changuan.domain.AppUpdateInfo
+import cn.oryjk.changuan.domain.BackendEnvironment
+import cn.oryjk.changuan.domain.DownloadedApk
 import cn.oryjk.changuan.domain.EmailCodeSent
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.QuoteSeries
 import cn.oryjk.changuan.domain.RankingBoard
+import cn.oryjk.changuan.domain.ReleaseHistoryItem
 import cn.oryjk.changuan.domain.RootTab
+import cn.oryjk.changuan.domain.ShizukuChannelState
 import cn.oryjk.changuan.domain.SignalConfluence
 import cn.oryjk.changuan.domain.Stock
+import cn.oryjk.changuan.domain.SystemInstallResult
 import cn.oryjk.changuan.domain.Timeframe
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 interface MarketReader {
     suspend fun search(query: String): List<Stock>
@@ -35,6 +44,45 @@ interface SessionStore {
 interface RouteStore {
     fun restore(): Triple<Stock?, Timeframe, RootTab>
     fun save(stock: Stock?, timeframe: Timeframe, tab: RootTab)
+}
+
+interface EnvironmentStore {
+    val environment: StateFlow<BackendEnvironment>
+    fun select(environment: BackendEnvironment)
+}
+
+class InMemoryEnvironmentStore(
+    initial: BackendEnvironment = BackendEnvironment.DEFAULT,
+) : EnvironmentStore {
+    private val _environment = MutableStateFlow(initial)
+    override val environment: StateFlow<BackendEnvironment> = _environment.asStateFlow()
+    override fun select(environment: BackendEnvironment) {
+        _environment.value = environment
+    }
+}
+
+interface ThemePreferenceStore {
+    val themeMode: StateFlow<AppThemeMode>
+    fun setThemeMode(mode: AppThemeMode)
+}
+
+class InMemoryThemePreferenceStore(
+    initial: AppThemeMode = AppThemeMode.SYSTEM,
+) : ThemePreferenceStore {
+    private val _themeMode = MutableStateFlow(initial)
+    override val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+    override fun setThemeMode(mode: AppThemeMode) {
+        _themeMode.value = mode
+    }
+}
+
+data class EnvironmentServices(
+    val market: MarketUseCases,
+    val auth: AuthUseCases,
+)
+
+fun interface EnvironmentServicesFactory {
+    fun create(environment: BackendEnvironment): EnvironmentServices
 }
 
 interface AuthReader {
@@ -61,18 +109,23 @@ interface AuthCommands {
 
 interface AppUpdateReader {
     suspend fun checkLatest(): AppUpdateInfo?
+    suspend fun fetchReleaseHistory(): List<ReleaseHistoryItem> = emptyList()
 }
 
 interface AppUpdateDownloader {
     suspend fun download(
         info: AppUpdateInfo,
         onProgress: (downloaded: Long, total: Long?) -> Unit,
-    ): String
+    ): DownloadedApk
 }
 
 interface AppUpdateInstaller {
-    fun canInstallPackages(): Boolean
-    fun openInstallPermissionSettings()
-    fun installApk(apkPath: String)
+    val channelState: StateFlow<ShizukuChannelState>
+    fun setShizukuEnabled(enabled: Boolean)
+    fun refreshShizukuState()
+    fun requestShizukuPermission()
+    fun openShizuku()
+    suspend fun installShizuku(apk: DownloadedApk, info: AppUpdateInfo)
+    fun installWithSystem(apk: DownloadedApk): SystemInstallResult
+    fun close() {}
 }
-

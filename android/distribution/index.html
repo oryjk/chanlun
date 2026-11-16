@@ -1,196 +1,387 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>缠观 Android 下载</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>缠观 Android 安装包分发页</title>
   <style>
     :root {
-      color-scheme: light;
-      --page: #EEF0F2;
-      --sheet: #FFFFFF;
-      --text: #1A222C;
-      --muted: #606E7E;
-      --line: #E3E6EA;
-      --accent: #2E4A6E;
-      --gold: #B48A42;
+      --bg: #ffffff;
+      --surface: #ffffff;
+      --subtle: #f5f5f5;
+      --border: #eaeaea;
+      --ink: #1b2128;
+      --secondary: #666666;
+      --muted: #999999;
+      --brand: #2f5e8c;
+      --brand-soft: #e8eff6;
+      --action: #1b2128;
+      --action-ink: #ffffff;
+      --warn-bg: #fff6ec;
+      --warn-border: #f6dec2;
+      --warn-ink: #8a4f1d;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1418;
+        --surface: #171e24;
+        --subtle: #1f2830;
+        --border: #2a3540;
+        --ink: #ecf1f6;
+        --secondary: #a8b4c0;
+        --muted: #6e7b88;
+        --brand: #6fa3d4;
+        --brand-soft: #1a2c3d;
+        --action: #ecf1f6;
+        --action-ink: #0f1418;
+        --warn-bg: #261b10;
+        --warn-border: #4d351e;
+        --warn-ink: #f4be87;
+      }
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      min-height: 100vh;
-      background: var(--page);
-      color: var(--text);
-      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
     }
-    main {
-      width: min(760px, calc(100% - 32px));
-      margin: auto;
-      padding: 40px 0 56px;
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 28px 18px 44px;
     }
     header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 20px 22px;
-      background: var(--sheet);
-      border: 1px solid var(--line);
-      border-radius: 6px;
-    }
-    .mark {
-      width: 52px;
-      height: 52px;
-      display: grid;
-      place-items: center;
-      border-radius: 6px;
-      background: var(--accent);
-      color: #fff;
-      font-size: 22px;
-      font-weight: 700;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 18px;
     }
     h1 {
       margin: 0;
-      font-size: clamp(22px, 5vw, 30px);
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
     }
-    .sub {
-      margin: 5px 0 0;
-      color: var(--muted);
+    .subtitle {
+      margin: 4px 0 0;
+      color: var(--secondary);
       font-size: 14px;
     }
-    .release {
-      margin-top: 12px;
-      padding: 22px;
-      background: var(--sheet);
-      border: 1px solid var(--line);
-      border-radius: 6px;
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 14px;
     }
-    .version-line {
+    .row {
       display: flex;
       justify-content: space-between;
-      gap: 16px;
-      align-items: baseline;
-    }
-    h2 {
-      margin: 0;
-      font-size: 19px;
-      font-variant-numeric: tabular-nums;
-    }
-    .published {
-      color: var(--muted);
-      font-size: 13px;
-      font-variant-numeric: tabular-nums;
-    }
-    .download {
-      display: flex;
-      justify-content: center;
       align-items: center;
-      min-height: 46px;
-      margin-top: 18px;
-      border-radius: 4px;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 600;
-      text-decoration: none;
-      font-size: 15px;
+      gap: 12px;
+      flex-wrap: wrap;
     }
-    dl {
-      display: grid;
-      grid-template-columns: 90px minmax(0, 1fr);
-      gap: 10px 16px;
-      margin: 20px 0 0;
-      padding-top: 16px;
-      border-top: 1px solid var(--line);
+    .version-title {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      margin: 0;
+    }
+    .badge {
+      display: inline-block;
+      background: var(--subtle);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 12px;
+      color: var(--secondary);
       font-variant-numeric: tabular-nums;
     }
-    dt { color: var(--muted); font-size: 13px; }
-    dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }
-    code { font-size: 12px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    h3 { margin: 24px 0 10px; font-size: 15px; }
-    ul { margin: 0; padding-left: 20px; line-height: 1.75; font-size: 14px; }
-    .history {
+    .badge.primary {
+      background: var(--brand-soft);
+      color: var(--brand);
+      border-color: transparent;
+      font-weight: 600;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px 14px;
+      margin: 14px 0;
+      padding: 12px;
+      background: var(--subtle);
+      border-radius: 12px;
+    }
+    .metric-label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .metric-value {
+      font-size: 14px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      word-break: break-all;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 22px;
+      border-radius: 999px;
+      background: var(--action);
+      color: var(--action-ink);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .btn.secondary {
+      background: var(--surface);
+      color: var(--ink);
+      border-color: var(--border);
+      font-size: 14px;
+      min-height: 40px;
+      padding: 0 16px;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
       margin-top: 12px;
-      padding: 20px 22px;
-      background: var(--sheet);
-      border: 1px solid var(--line);
-      border-radius: 6px;
     }
-    .history h3 { margin-top: 0; }
-    .history a { color: var(--accent); font-weight: 600; text-decoration: none; }
-    .notice {
-      margin-top: 18px;
+    .notes {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--secondary);
+      font-size: 14px;
+    }
+    .notes li + li { margin-top: 4px; }
+    .checksum {
+      margin-top: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: var(--secondary);
+      word-break: break-all;
+      background: var(--subtle);
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 10px;
+    }
+    .history-item {
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+    .history-item:first-of-type { border-top: none; padding-top: 2px; }
+    .history-item:last-of-type { padding-bottom: 2px; }
+    .warn-box {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      color: var(--warn-ink);
+      border-radius: 12px;
       padding: 12px 14px;
-      border-left: 3px solid var(--gold);
-      background: #FAF8F3;
-      color: var(--text);
       font-size: 13px;
-      line-height: 1.6;
     }
-    @media (max-width: 540px) {
-      main { padding-top: 20px; }
-      .release, header, .history { padding: 16px; }
-      .version-line { display: block; }
-      .published { margin-top: 6px; display: block; }
-      dl { grid-template-columns: 72px minmax(0, 1fr); }
+    footer {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
     }
   </style>
 </head>
 <body>
-<main>
-  <header>
-    <div class="mark">缠</div>
-    <div>
-      <h1>缠观 Android</h1>
-      <p class="sub">股票与 ETF 四周期缠论结构、多级别联立与全市场收盘榜单</p>
-    </div>
-  </header>
-  <section class="release">
-    <div class="version-line">
-      <h2 id="version">正在读取版本</h2>
-      <span class="published" id="published">-</span>
-    </div>
-    <a class="download" href="latest.apk" download>下载最新 APK 安装包</a>
-    <dl>
-      <dt>文件大小</dt><dd id="size">-</dd>
-      <dt>SHA256</dt><dd><code id="sha">-</code></dd>
-      <dt>Git 提交</dt><dd><code id="commit">-</code></dd>
-    </dl>
-    <h3>本次更新</h3>
-    <ul id="notes"><li>正在读取发布说明</li></ul>
-    <p class="notice">原生 Android 客户端（100% Kotlin + Jetpack Compose + 原生 Canvas 图表，内置每 30 秒自动检测更新）。手机或平板浏览器下载后若提示安装权限，请允许浏览器安装未知应用。买卖点为规则化结构识别，不构成买卖建议。</p>
-  </section>
-  <section class="history">
-    <h3>历史版本</h3>
-    <ul id="history"><li>正在读取历史版本</li></ul>
-  </section>
-</main>
-<script>
-  const fmtSize = n => n ? `${(n / 1024 / 1024).toFixed(1)} MB` : '-';
-  const fmtTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-';
-  async function load() {
-    const metadata = await fetch('metadata.json', { cache: 'no-store' }).then(r => {
-      if (!r.ok) throw new Error(r.status);
-      return r.json();
-    });
-    document.querySelector('#version').textContent = `版本 v${metadata.versionName} (#${metadata.versionCode})`;
-    const download = document.querySelector('.download');
-    download.href = metadata.releaseFile;
-    download.download = metadata.releaseFile.split('/').pop();
-    document.querySelector('#published').textContent = fmtTime(metadata.publishedAt);
-    document.querySelector('#size').textContent = fmtSize(metadata.fileSizeBytes);
-    document.querySelector('#sha').textContent = metadata.sha256;
-    document.querySelector('#commit').textContent = metadata.gitCommit.slice(0, 12);
-    document.querySelector('#notes').innerHTML = metadata.releaseNotes.map(item => `<li>${escapeHtml(item)}</li>`).join('');
-    const history = await fetch('releases.json', { cache: 'no-store' }).then(r => r.json());
-    document.querySelector('#history').innerHTML = history.map(item => `<li><a href="${encodeURI(item.releaseFile)}">v${escapeHtml(item.versionName)} (#${escapeHtml(item.versionCode)})</a>  ${fmtTime(item.publishedAt)}</li>`).join('');
-  }
-  function escapeHtml(value) {
-    const node = document.createElement('span');
-    node.textContent = String(value);
-    return node.innerHTML;
-  }
-  load().catch(() => {
-    document.querySelector('#version').textContent = '版本信息读取失败';
-  });
-</script>
+  <div class="wrap">
+    <header>
+      <div class="row">
+        <div>
+          <h1>缠观 Android</h1>
+          <p class="subtitle">沪深 A 股与境内 ETF 缠论结构分析客户端安装包分发页</p>
+        </div>
+        <span class="badge primary">双通道分发（外网 / 内网）</span>
+      </div>
+    </header>
+
+    <section class="card" id="latest-card">
+      <div class="row">
+        <div>
+          <span class="badge" id="pkg-id">cn.oryjk.changuan.debug</span>
+          <h2 class="version-title" id="ver-title">正在读取最新版本…</h2>
+        </div>
+        <span class="badge primary" id="ver-code">build --</span>
+      </div>
+
+      <div class="meta-grid" id="meta-grid" style="display:none;">
+        <div>
+          <div class="metric-label">发布时间 (北京时间)</div>
+          <div class="metric-value" id="meta-date">-</div>
+        </div>
+        <div>
+          <div class="metric-label">安装包大小</div>
+          <div class="metric-value" id="meta-size">-</div>
+        </div>
+        <div>
+          <div class="metric-label">Git 提交</div>
+          <div class="metric-value" id="meta-commit">-</div>
+        </div>
+      </div>
+
+      <ul class="notes" id="latest-notes"></ul>
+      <div class="checksum" id="meta-sha" style="display:none;" title="点击复制 SHA-256"></div>
+
+      <div class="actions">
+        <a class="btn" id="btn-latest" href="latest.apk">下载最新 APK</a>
+        <a class="btn secondary" id="btn-release" href="#" style="display:none;">按版本号下载</a>
+      </div>
+      <div id="load-error" class="warn-box" style="display:none;margin-top:12px;"></div>
+    </section>
+
+    <section class="card">
+      <h3 class="section-title">版本更新记录</h3>
+      <div id="history-list" class="subtitle">正在加载历史记录…</div>
+    </section>
+
+    <section class="card">
+      <h3 class="section-title">访问入口与校验说明</h3>
+      <p class="subtitle" style="margin-top:0;">
+        外网入口：<strong>https://ai.oryjk.cn:82/chanlun-android/</strong><br />
+        内网入口：<strong>http://172.16.60.233/chanlun-android/</strong><br />
+        App 内每 30 秒自动检测更新，下载完成后自动校验 SHA-256 与签名一致；支持 Shizuku 或系统包安装器完成升级。
+      </p>
+    </section>
+
+    <footer>
+      买卖点为规则化结构识别，仅供研究，不构成买卖建议
+    </footer>
+  </div>
+
+  <script>
+    function fmtMb(bytes) {
+      if (!bytes || bytes <= 0) return "-";
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+    }
+
+    function escapeText(text) {
+      const div = document.createElement("div");
+      div.textContent = text == null ? "" : String(text);
+      return div.textContent;
+    }
+
+    async function load() {
+      const errBox = document.getElementById("load-error");
+      try {
+        const res = await fetch("metadata.json?_=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) throw new Error("metadata HTTP " + res.status);
+        const meta = await res.json();
+        document.getElementById("ver-title").textContent = "v" + (meta.versionName || "未知");
+        document.getElementById("ver-code").textContent = "build " + (meta.versionCode || "-");
+        if (meta.applicationId) {
+          document.getElementById("pkg-id").textContent = meta.applicationId;
+        }
+        document.getElementById("meta-date").textContent = meta.publishedAt || "-";
+        document.getElementById("meta-size").textContent = fmtMb(meta.fileSizeBytes);
+        document.getElementById("meta-commit").textContent = (meta.gitCommit || "-").slice(0, 7);
+        document.getElementById("meta-grid").style.display = "grid";
+
+        const notesEl = document.getElementById("latest-notes");
+        notesEl.innerHTML = "";
+        (meta.releaseNotes || []).forEach(function (n) {
+          const li = document.createElement("li");
+          li.textContent = n;
+          notesEl.appendChild(li);
+        });
+
+        if (meta.sha256) {
+          const shaEl = document.getElementById("meta-sha");
+          shaEl.textContent = "SHA-256: " + meta.sha256;
+          shaEl.style.display = "block";
+          shaEl.addEventListener("click", function () {
+            if (navigator.clipboard) navigator.clipboard.writeText(meta.sha256);
+          });
+        }
+
+        if (meta.releaseFile) {
+          const btnRel = document.getElementById("btn-release");
+          btnRel.href = meta.releaseFile;
+          btnRel.style.display = "inline-flex";
+        }
+      } catch (e) {
+        errBox.textContent = "无法读取最新版本元数据：" + escapeText(e.message);
+        errBox.style.display = "block";
+      }
+
+      const historyEl = document.getElementById("history-list");
+      try {
+        const hRes = await fetch("releases.json?_=" + Date.now(), { cache: "no-store" });
+        if (!hRes.ok) throw new Error("releases HTTP " + hRes.status);
+        const list = await hRes.json();
+        if (!Array.isArray(list) || list.length === 0) {
+          historyEl.textContent = "暂无发布记录";
+          return;
+        }
+        historyEl.innerHTML = "";
+        list.forEach(function (item) {
+          const box = document.createElement("div");
+          box.className = "history-item";
+
+          const header = document.createElement("div");
+          header.className = "row";
+
+          const left = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = "v" + (item.versionName || "?") + "  (#" + (item.versionCode || "?") + ")";
+          left.appendChild(title);
+          if (item.publishedAt) {
+            const dt = document.createElement("span");
+            dt.className = "subtitle";
+            dt.style.marginLeft = "10px";
+            dt.textContent = item.publishedAt;
+            left.appendChild(dt);
+          }
+          header.appendChild(left);
+
+          const right = document.createElement("div");
+          if (item.apkAvailable && item.releaseFile) {
+            const link = document.createElement("a");
+            link.className = "btn secondary";
+            link.href = item.releaseFile;
+            link.textContent = "下载 APK";
+            right.appendChild(link);
+          } else {
+            const tag = document.createElement("span");
+            tag.className = "badge";
+            tag.textContent = "已归档";
+            right.appendChild(tag);
+          }
+          header.appendChild(right);
+          box.appendChild(header);
+
+          if (Array.isArray(item.releaseNotes) && item.releaseNotes.length > 0) {
+            const ul = document.createElement("ul");
+            ul.className = "notes";
+            item.releaseNotes.forEach(function (n) {
+              const li = document.createElement("li");
+              li.textContent = n;
+              ul.appendChild(li);
+            });
+            box.appendChild(ul);
+          }
+          historyEl.appendChild(box);
+        });
+      } catch (e) {
+        historyEl.textContent = "无法读取历史发布记录。";
+      }
+    }
+
+    load();
+  </script>
 </body>
 </html>

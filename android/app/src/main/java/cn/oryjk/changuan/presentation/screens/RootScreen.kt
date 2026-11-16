@@ -1,277 +1,252 @@
 package cn.oryjk.changuan.presentation.screens
 
-import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import cn.oryjk.changuan.BuildConfig
 import cn.oryjk.changuan.domain.RootTab
 import cn.oryjk.changuan.presentation.AppViewModel
-import cn.oryjk.changuan.presentation.ChanTheme
-import kotlinx.coroutines.launch
+import cn.oryjk.changuan.presentation.LocalChanPalette
+import cn.oryjk.changuan.presentation.designsystem.ClarityRadius
+import cn.oryjk.changuan.presentation.designsystem.MainBottomBar
+import cn.oryjk.changuan.presentation.designsystem.MainSideRail
 
 @Composable
 fun RootScreen(
     viewModel: AppViewModel,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalChanPalette.current
     val state by viewModel.state.collectAsState()
-    val scope = rememberCoroutineScope()
-    var showSearch by remember { mutableStateOf(false) }
-    var showTerms by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(ChanTheme.Sheet),
-    ) {
-        val useRail = maxWidth >= 720.dp
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    var showGlossary by rememberSaveable { mutableStateOf(false) }
+    var showEnvironmentDialog by rememberSaveable { mutableStateOf(false) }
+    var showInstallerSettings by rememberSaveable { mutableStateOf(false) }
+    var showReleaseHistory by rememberSaveable { mutableStateOf(false) }
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            TopBar(
-                stockName = state.stock.name,
-                userNickname = state.user?.nickname,
-                onOpenSearch = { showSearch = true },
-                onRefresh = { viewModel.reload(refresh = true) },
+    LaunchedEffect(state.snackbarMessage) {
+        val message = state.snackbarMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.clearSnackbar()
+    }
+
+    val snackbarHost: @Composable () -> Unit = {
+        SnackbarHost(hostState = snackbarHostState) { data ->
+            Snackbar(
+                snackbarData = data,
+                shape = ClarityRadius.tile,
+                containerColor = palette.inkPrimary,
+                contentColor = palette.backgroundCanvas,
             )
-            HorizontalDivider(color = ChanTheme.Line)
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val useRail = maxWidth >= 840.dp
+
+            @Composable
+            fun ActiveTabContent(innerModifier: Modifier) {
+                when (state.tab) {
+                    RootTab.MARKET -> MarketScreen(
+                        state = state,
+                        onSelectTimeframe = viewModel::changeTimeframe,
+                        onToggleLayer = viewModel::toggleLayer,
+                        onRefresh = { viewModel.reload(refresh = true) },
+                        onOpenSearch = {
+                            viewModel.searchStocks("")
+                            showSearch = true
+                        },
+                        onOpenGlossary = { showGlossary = true },
+                        modifier = innerModifier,
+                    )
+
+                    RootTab.RANKING -> RankingScreen(
+                        state = state,
+                        onRefresh = { viewModel.reload(refresh = true) },
+                        onSelectStock = { stock ->
+                            viewModel.selectStock(stock, forceDaily = true)
+                            viewModel.changeTab(RootTab.MARKET)
+                        },
+                        modifier = innerModifier,
+                    )
+
+                    RootTab.ACCOUNT -> AccountScreen(
+                        state = state,
+                        onOpenAuth = { mode -> viewModel.openAuthDialog(mode) },
+                        onLogout = { viewModel.logout() },
+                        onDeleteAccount = { viewModel.deleteAccount() },
+                        onSelectThemeMode = viewModel::setThemeMode,
+                        onOpenEnvironmentDialog = { showEnvironmentDialog = true },
+                        onOpenInstallerSettings = {
+                            viewModel.refreshInstallerState()
+                            showInstallerSettings = true
+                        },
+                        onCheckUpdate = viewModel::checkUpdateNow,
+                        onOpenReleaseHistory = {
+                            viewModel.loadReleaseHistory(force = true)
+                            showReleaseHistory = true
+                        },
+                        modifier = innerModifier,
+                    )
+                }
+            }
 
             if (useRail) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .navigationBarsPadding(),
-                ) {
-                    NavigationRail(
-                        containerColor = ChanTheme.Sheet,
-                    ) {
-                        RootTab.entries.forEach { tab ->
-                            val selected = state.tab == tab
-                            NavigationRailItem(
-                                selected = selected,
-                                onClick = { viewModel.changeTab(tab) },
-                                icon = {
-                                    Text(
-                                        text = tab.label.take(1),
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = tab.label,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    )
-                                },
-                                colors = NavigationRailItemDefaults.colors(
-                                    selectedIconColor = ChanTheme.Accent,
-                                    selectedTextColor = ChanTheme.Accent,
-                                    indicatorColor = ChanTheme.Page,
-                                    unselectedIconColor = ChanTheme.TextSecondary,
-                                    unselectedTextColor = ChanTheme.TextSecondary,
-                                ),
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight()
-                            .background(ChanTheme.Line),
+                Row(modifier = Modifier.fillMaxSize()) {
+                    MainSideRail(
+                        currentTab = state.tab,
+                        onSelect = viewModel::changeTab,
                     )
-                    Box(modifier = Modifier.weight(1f)) {
-                        TabContent(
-                            viewModel = viewModel,
-                            onOpenTerms = { showTerms = true },
-                            scope = scope,
+                    Scaffold(
+                        containerColor = palette.backgroundCanvas,
+                        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Right),
+                        snackbarHost = snackbarHost,
+                    ) { innerPadding ->
+                        ActiveTabContent(
+                            Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding),
                         )
                     }
                 }
             } else {
-                Box(modifier = Modifier.weight(1f)) {
-                    TabContent(
-                        viewModel = viewModel,
-                        onOpenTerms = { showTerms = true },
-                        scope = scope,
-                    )
-                }
-                HorizontalDivider(color = ChanTheme.Line)
-                NavigationBar(
-                    containerColor = ChanTheme.Sheet,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.navigationBarsPadding(),
-                ) {
-                    RootTab.entries.forEach { tab ->
-                        val selected = state.tab == tab
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { viewModel.changeTab(tab) },
-                            icon = {
-                                Text(
-                                    text = tab.label.take(1),
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = tab.label,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = ChanTheme.Accent,
-                                selectedTextColor = ChanTheme.Accent,
-                                indicatorColor = Color.Transparent,
-                                unselectedIconColor = ChanTheme.TextSecondary,
-                                unselectedTextColor = ChanTheme.TextSecondary,
-                            ),
+                Scaffold(
+                    containerColor = palette.backgroundCanvas,
+                    contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
+                    snackbarHost = snackbarHost,
+                    bottomBar = {
+                        MainBottomBar(
+                            currentTab = state.tab,
+                            onSelect = viewModel::changeTab,
                         )
-                    }
+                    },
+                ) { innerPadding ->
+                    ActiveTabContent(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
+                    )
                 }
             }
         }
-    }
 
-    if (showSearch) {
-        StockSearchDialog(
-            state = state,
-            onQueryChange = { viewModel.searchStocks(it) },
-            onSelectStock = { viewModel.selectStock(it) },
-            onDismiss = { showSearch = false },
-        )
-    }
-
-    if (showTerms) {
-        TermInfoDialog(onDismiss = { showTerms = false })
-    }
-
-    state.pendingUpdate?.let { updateInfo ->
-        AppUpdateDialog(
-            info = updateInfo,
-            downloadState = state.updateDownloadState,
-            canInstallPackages = { viewModel.canInstallPackages() },
-            onOpenInstallPermissionSettings = { viewModel.openInstallPermissionSettings() },
-            onInstallApk = { apkPath -> viewModel.installDownloadedUpdate(apkPath) },
-            onStartDownload = { viewModel.startUpdateDownload(updateInfo) },
-            onDismiss = { viewModel.dismissUpdate() },
-        )
-    }
-}
-
-@Composable
-private fun TopBar(
-    stockName: String,
-    userNickname: String?,
-    onOpenSearch: () -> Unit,
-    onRefresh: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(ChanTheme.Sheet)
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-                ),
+        AnimatedVisibility(
+            visible = showSearch,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            BackHandler(enabled = showSearch) {
+                showSearch = false
+            }
+            StockSearchScreen(
+                currentSecid = state.stock.secid,
+                results = state.searchResults,
+                loading = state.searchLoading,
+                error = state.searchError,
+                onQueryChange = viewModel::searchStocks,
+                onSelectStock = { stock ->
+                    showSearch = false
+                    viewModel.selectStock(stock)
+                },
+                onBack = { showSearch = false },
             )
-            .height(52.dp)
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "缠观",
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold,
-            color = ChanTheme.Accent,
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = userNickname ?: "游客",
-            fontSize = 12.sp,
-            color = ChanTheme.TextSecondary,
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        TextButton(onClick = onOpenSearch) {
-            Text("搜索 ($stockName)", fontSize = 13.sp, color = ChanTheme.Accent)
-        }
-        TextButton(onClick = onRefresh) {
-            Text("刷新", fontSize = 13.sp, color = ChanTheme.Accent)
         }
     }
-}
 
-@Composable
-private fun TabContent(
-    viewModel: AppViewModel,
-    onOpenTerms: () -> Unit,
-    scope: kotlinx.coroutines.CoroutineScope,
-) {
-    val state by viewModel.state.collectAsState()
-    when (state.tab) {
-        RootTab.MARKET -> MarketScreen(
-            state = state,
-            onChangeTimeframe = { viewModel.changeTimeframe(it) },
-            onToggleLayer = { viewModel.toggleLayer(it) },
-            onRetry = { viewModel.reload(refresh = true) },
-            onOpenTerms = onOpenTerms,
+    if (showGlossary) {
+        TermInfoSheet(onDismiss = { showGlossary = false })
+    }
+
+    if (showEnvironmentDialog) {
+        BackendEnvironmentDialog(
+            current = state.environment,
+            onSelect = { env ->
+                viewModel.selectEnvironment(env)
+                showEnvironmentDialog = false
+            },
+            onDismiss = { showEnvironmentDialog = false },
         )
-        RootTab.RANKING -> RankingScreen(
-            state = state,
-            onSelectStock = { viewModel.selectStock(it, forceDaily = true) },
-            onRetry = { viewModel.reload(refresh = true) },
+    }
+
+    if (showInstallerSettings) {
+        InstallerSettingsDialog(
+            state = state.shizukuState,
+            onSetEnabled = viewModel::setShizukuEnabled,
+            onRefresh = viewModel::refreshInstallerState,
+            onRequestPermission = viewModel::requestShizukuPermission,
+            onOpenShizuku = viewModel::openShizuku,
+            onDismiss = { showInstallerSettings = false },
         )
-        RootTab.ACCOUNT -> AccountScreen(
-            state = state,
-            onSwitchAuthMode = { viewModel.switchAuthMode(it) },
-            onLoginWithEmail = { email, pwd ->
-                scope.launch { viewModel.loginWithEmail(email, pwd) }
+    }
+
+    if (showReleaseHistory) {
+        ReleaseHistorySheet(
+            items = state.releaseHistoryItems,
+            loading = state.releaseHistoryLoading,
+            error = state.releaseHistoryError,
+            downloadPageUrl = "https://ai.oryjk.cn:82/" + BuildConfig.UPDATE_DIRECTORY,
+            onRetry = { viewModel.loadReleaseHistory(force = true) },
+            onDismiss = { showReleaseHistory = false },
+        )
+    }
+
+    if (state.showAuthDialog) {
+        AuthDialog(
+            mode = state.authMode,
+            busy = state.accountBusy,
+            sendingCode = state.sendingCode,
+            cooldownSeconds = state.codeCooldownSeconds,
+            error = state.accountError,
+            message = state.accountMessage,
+            onSwitchMode = viewModel::switchAuthMode,
+            onSendCode = viewModel::sendEmailCode,
+            onRegister = viewModel::registerWithEmail,
+            onLogin = viewModel::loginWithEmail,
+            onDismiss = viewModel::closeAuthDialog,
+        )
+    }
+
+    state.pendingUpdate?.let { update ->
+        AppUpdateDialog(
+            update = update,
+            downloadState = state.updateDownloadState,
+            installState = state.installState,
+            shizukuState = state.shizukuState,
+            onStartDownload = viewModel::startUpdateDownload,
+            onInstallUpdate = viewModel::installDownloadedUpdate,
+            onInstallSystem = viewModel::installWithSystem,
+            onOpenInstallerSettings = {
+                viewModel.refreshInstallerState()
+                showInstallerSettings = true
             },
-            onSendEmailCode = { email ->
-                scope.launch { viewModel.sendEmailCode(email) }
-            },
-            onRegisterWithEmail = { email, code, pwd, nick ->
-                scope.launch { viewModel.registerWithEmail(email, code, pwd, nick) }
-            },
-            onLogout = { scope.launch { viewModel.logout() } },
-            onDeleteAccount = { scope.launch { viewModel.deleteAccount() } },
-            onCheckUpdateNow = { viewModel.checkUpdateNow() },
-            onOpenTerms = onOpenTerms,
+            onDismiss = viewModel::dismissUpdate,
         )
     }
 }

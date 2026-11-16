@@ -82,8 +82,7 @@ object SignalRules {
             "bearish" -> "sell"
             else -> ""
         }
-        val aligned = point != null && point.side == expectedSide
-        if (aligned && point != null) {
+        if (point != null && point.side == expectedSide) {
             if (quality?.state != "confirmed") {
                 return SignalConclusion(
                     title = "结构已确认，证据待补齐",

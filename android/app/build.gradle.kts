@@ -22,8 +22,8 @@ android {
         applicationId = "cn.oryjk.changuan"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -34,9 +34,10 @@ android {
             versionNameSuffix = "-debug"
             val apiBaseUrl = configuredValue(
                 "CHANLUN_API_BASE_URL",
-                "https://match.oryjk.cn/chanlun/",
+                "https://ai.oryjk.cn:82/chanlun-dev/",
             ).let { if (it.endsWith('/')) it else "$it/" }
             buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+            buildConfigField("String", "UPDATE_DIRECTORY", "\"chanlun-android/\"")
         }
         release {
             val apiBaseUrl = configuredValue(
@@ -44,6 +45,7 @@ android {
                 "https://match.oryjk.cn/chanlun/",
             ).let { if (it.endsWith('/')) it else "$it/" }
             buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+            buildConfigField("String", "UPDATE_DIRECTORY", "\"chanlun-android/\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -61,6 +63,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all {
+                it.maxHeapSize = "2g"
+            }
+        }
     }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
 }
@@ -82,7 +92,13 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

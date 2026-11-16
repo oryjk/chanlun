@@ -245,3 +245,59 @@ class NativeEmailAuthTests(unittest.TestCase):
         with self.assertRaises(AuthValidationError):
             self.service.register_email('new@example.com', '123456', 'short')
 
+    def test_code_pepper_changes_digest_and_verifies(self):
+        peppered = AppAuthService(self.store, self.store, self.apple, lambda: self.now, self.email, code_pepper='pepper-1')
+        peppered.send_email_code('carol@example.com')
+        code = self.email.sent[-1][1]
+        res = peppered.register_email('carol@example.com', code, 'Pass123456')
+        self.assertIsNotNone(peppered.session(res.token))
+
+    def test_smtp_gateway_starttls_order_and_from_header(self):
+        from unittest.mock import patch
+        from backend.infrastructure.auth.smtp_gateway import SmtpEmailGateway
+
+        calls = []
+
+        class FakeSmtp:
+            def __init__(self, host, port, timeout=10):
+                calls.append(('init', host, port, timeout))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def ehlo(self):
+                calls.append(('ehlo',))
+
+            def starttls(self, context=None):
+                calls.append(('starttls', context is not None))
+
+            def login(self, user, password):
+                calls.append(('login', user, bool(password)))
+
+            def send_message(self, msg):
+                calls.append(('send_message', msg['From'], msg['To'], msg['Subject'], msg.get_content()))
+
+        with patch('backend.infrastructure.auth.smtp_gateway.smtplib.SMTP', FakeSmtp):
+            gw = SmtpEmailGateway(
+                host='smtp.feishu.cn',
+                port=587,
+                username='bot@example.com',
+                password='secret',
+                sender='bot@example.com',
+                tls_mode='starttls',
+                from_name='缠观',
+            )
+            gw.send_verification_code('User@Example.com', '123456', 10)
+
+        self.assertEqual([c[0] for c in calls], ['init', 'ehlo', 'starttls', 'ehlo', 'login', 'send_message'])
+        self.assertEqual(calls[0][1:3], ('smtp.feishu.cn', 587))
+        sent_from, sent_to, subject, body = calls[-1][1:]
+        self.assertIn('bot@example.com', sent_from)
+        self.assertEqual(sent_to, 'user@example.com')
+        self.assertIn('缠观', subject)
+        self.assertIn('123456', body)
+
+

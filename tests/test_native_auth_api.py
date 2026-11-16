@@ -159,3 +159,51 @@ class NativeAuthConfigurationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     build_native_auth()
             self.assertFalse(store.exists())
+
+    def test_dotenv_loader_and_strategy_shelf_smtp_fallback(self):
+        import os
+        from backend.app.app_auth import _build_email_gateway
+        from backend.app.env import load_dotenv_if_present
+
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / '.env'
+            env_file.write_text(
+                '# comment\n'
+                'export TEST_DOTENV_A="hello world"\n'
+                "TEST_DOTENV_B='single'\n"
+                'TEST_DOTENV_OVERRIDE=from_file\n',
+                encoding='utf-8',
+            )
+            with patch.dict(os.environ, {'TEST_DOTENV_OVERRIDE': 'from_env'}, clear=False):
+                load_dotenv_if_present(env_file)
+                self.assertEqual(os.environ.get('TEST_DOTENV_A'), 'hello world')
+                self.assertEqual(os.environ.get('TEST_DOTENV_B'), 'single')
+                self.assertEqual(os.environ.get('TEST_DOTENV_OVERRIDE'), 'from_env')
+
+            with patch.dict(os.environ, {
+                'SMTP_HOST': 'smtp.feishu.cn',
+                'SMTP_PORT': '587',
+                'SMTP_USERNAME': 'mailer@example.com',
+                'SMTP_PASSWORD': 'pw',
+                'SMTP_FROM_EMAIL': 'mailer@example.com',
+                'SMTP_FROM_NAME': '策略家',
+                'SMTP_TLS_MODE': 'starttls',
+                'CHANLUN_APP_AUTH_STORE_PATH': str(Path(directory) / 'accounts.db'),
+            }, clear=True):
+                gw = _build_email_gateway()
+                self.assertIsNotNone(gw)
+                self.assertEqual(gw._host, 'smtp.feishu.cn')
+                self.assertEqual(gw._port, 587)
+                self.assertEqual(gw._tls_mode, 'starttls')
+                self.assertEqual(gw._from_name, '缠观')
+                services = build_native_auth()
+                self.assertIsNotNone(services.commands)
+
+            with patch.dict(os.environ, {
+                'CHANLUN_EMAIL_AUTH_ENABLED': 'false',
+                'SMTP_HOST': 'smtp.feishu.cn',
+                'SMTP_USERNAME': 'mailer@example.com',
+                'SMTP_PASSWORD': 'pw',
+                'SMTP_FROM_EMAIL': 'mailer@example.com',
+            }, clear=True):
+                self.assertIsNone(_build_email_gateway())

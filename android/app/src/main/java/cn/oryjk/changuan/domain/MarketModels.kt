@@ -28,7 +28,7 @@ enum class Timeframe(val rawValue: String, val label: String) {
 enum class RootTab(val rawValue: String, val label: String) {
     MARKET("market", "行情"),
     RANKING("ranking", "榜单"),
-    ACCOUNT("account", "账号");
+    ACCOUNT("account", "菜单");
 
     companion object {
         fun fromRaw(raw: String?): RootTab =
@@ -312,30 +312,22 @@ data class TermDefinition(
     val usage: String,
 )
 
-data class AppUpdateInfo(
-    val versionName: String,
-    val versionCode: Int,
-    val publishedAt: String?,
-    val gitCommit: String?,
-    val releaseNotes: List<String>,
-    val downloadPageUrl: String,
-    val apkUrl: String? = null,
-    val sha256: String? = null,
-    val fileSizeBytes: Long? = null,
-)
-
-sealed interface UpdateDownloadState {
-    data object Idle : UpdateDownloadState
-    data class Downloading(val downloaded: Long, val total: Long?) : UpdateDownloadState
-    data class Ready(val apkPath: String) : UpdateDownloadState
-    data class Failed(val message: String) : UpdateDownloadState
-}
-
 object DefaultStocks {
     val KWEICHOW_MOUTAI = Stock(
         secid = "600519.SH",
         symbol = "600519",
         name = "贵州茅台",
         market = "沪A",
+    )
+
+    val POPULAR_SEARCHES: List<Stock> = listOf(
+        KWEICHOW_MOUTAI,
+        Stock(secid = "510300.SH", symbol = "510300", name = "沪深300ETF", market = "ETF"),
+        Stock(secid = "300750.SZ", symbol = "300750", name = "宁德时代", market = "深A"),
+        Stock(secid = "002594.SZ", symbol = "002594", name = "比亚迪", market = "深A"),
+        Stock(secid = "688981.SH", symbol = "688981", name = "中芯国际", market = "沪A"),
+        Stock(secid = "510050.SH", symbol = "510050", name = "上证50ETF", market = "ETF"),
+        Stock(secid = "159915.SZ", symbol = "159915", name = "创业板ETF", market = "ETF"),
+        Stock(secid = "600036.SH", symbol = "600036", name = "招商银行", market = "沪A"),
     )
 }

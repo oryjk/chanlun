@@ -1,16 +1,24 @@
 package cn.oryjk.changuan.infrastructure
 
 import android.content.Context
+import cn.oryjk.changuan.application.EnvironmentStore
 import cn.oryjk.changuan.application.RouteStore
 import cn.oryjk.changuan.application.SessionStore
+import cn.oryjk.changuan.application.ThemePreferenceStore
+import cn.oryjk.changuan.domain.AppThemeMode
+import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.domain.RootTab
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.domain.Timeframe
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class SharedPreferencesSessionStore(
     context: Context,
+    prefsName: String = DEFAULT_PREFS_NAME,
 ) : SessionStore {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
     override fun token(): String? =
         prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
@@ -24,15 +32,70 @@ class SharedPreferencesSessionStore(
     }
 
     companion object {
-        private const val PREFS_NAME = "changuan_session"
+        private const val DEFAULT_PREFS_NAME = "changuan_session"
         private const val KEY_TOKEN = "bearer_token"
+
+        fun prefsNameFor(environment: BackendEnvironment): String = when (environment) {
+            BackendEnvironment.Development -> DEFAULT_PREFS_NAME
+            BackendEnvironment.DevelopmentProxy -> "${DEFAULT_PREFS_NAME}_development_proxy"
+            BackendEnvironment.Production -> "${DEFAULT_PREFS_NAME}_production"
+        }
+    }
+}
+
+class SharedPreferencesEnvironmentStore(
+    context: Context,
+    private val defaultEnvironment: BackendEnvironment = BackendEnvironment.DEFAULT,
+) : EnvironmentStore {
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val _environment = MutableStateFlow(readInitial())
+    override val environment: StateFlow<BackendEnvironment> = _environment.asStateFlow()
+
+    override fun select(environment: BackendEnvironment) {
+        if (_environment.value == environment) return
+        val committed = prefs.edit()
+            .putString(KEY_ENVIRONMENT, environment.id)
+            .commit()
+        check(committed) { "无法保存后端环境，请重试" }
+        _environment.value = environment
+    }
+
+    private fun readInitial(): BackendEnvironment {
+        val raw = runCatching { prefs.getString(KEY_ENVIRONMENT, null) }.getOrNull()
+        return if (raw.isNullOrBlank()) defaultEnvironment else BackendEnvironment.fromId(raw)
+    }
+
+    companion object {
+        private const val PREFS_NAME = "changuan_environment"
+        private const val KEY_ENVIRONMENT = "environment"
+    }
+}
+
+class SharedPreferencesThemeStore(
+    context: Context,
+) : ThemePreferenceStore {
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val _themeMode = MutableStateFlow(
+        AppThemeMode.fromRaw(runCatching { prefs.getString(KEY_THEME_MODE, null) }.getOrNull()),
+    )
+    override val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    override fun setThemeMode(mode: AppThemeMode) {
+        if (_themeMode.value == mode) return
+        prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
+        _themeMode.value = mode
+    }
+
+    companion object {
+        private const val PREFS_NAME = "changuan_theme"
+        private const val KEY_THEME_MODE = "theme_mode"
     }
 }
 
 class SharedPreferencesRouteStore(
     context: Context,
 ) : RouteStore {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     override fun restore(): Triple<Stock?, Timeframe, RootTab> {
         val secid = prefs.getString(KEY_SECID, null)

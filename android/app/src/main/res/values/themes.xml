@@ -1,7 +1,3 @@
 <resources>
-    <style name="Theme.ChanGuan" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">#FFFFFF</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
-        <item name="android:windowLightStatusBar">true</item>
-    </style>
+    <style name="Theme.ChanGuan" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

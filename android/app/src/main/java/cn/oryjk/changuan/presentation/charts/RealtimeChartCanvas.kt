@@ -7,8 +7,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -19,10 +22,9 @@ import cn.oryjk.changuan.domain.PriceProjection
 import cn.oryjk.changuan.domain.QuotePoint
 import cn.oryjk.changuan.domain.RankingEntry
 import cn.oryjk.changuan.domain.Stock
-import cn.oryjk.changuan.presentation.ChanTheme
+import cn.oryjk.changuan.presentation.LocalChanPalette
 import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.min
 
 @Composable
 fun RealtimeChartCanvas(
@@ -31,18 +33,19 @@ fun RealtimeChartCanvas(
     points: List<QuotePoint>,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalChanPalette.current
     val textPaint = remember {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.MONOSPACE
+            typeface = Typeface.SANS_SERIF
         }
     }
 
     Canvas(modifier = modifier) {
         val w = size.width.toDouble()
         val h = size.height.toDouble()
-        val padH = 10.0
+        val padH = 12.0
         val top = 16.0
-        val plotH = max(24.0, h - 40.0)
+        val plotH = max(24.0, h - 42.0)
         val plotW = max(1.0, w - padH * 2)
         val dashed = PathEffect.dashPathEffect(floatArrayOf(6f, 5f), 0f)
 
@@ -65,12 +68,11 @@ fun RealtimeChartCanvas(
             height = plotH,
         )
 
-        // Lunch break vertical separator (at 120 minutes out of 240 for A-shares)
         if (session.windows.size > 1) {
             val morningMinutes = (session.windows[0].second - session.windows[0].first).toDouble()
             val midX = (padH + (morningMinutes / duration) * plotW).toFloat()
             drawLine(
-                color = ChanTheme.Line,
+                color = palette.cardBorder,
                 start = Offset(midX, top.toFloat()),
                 end = Offset(midX, (top + plotH).toFloat()),
                 strokeWidth = 1f,
@@ -78,11 +80,10 @@ fun RealtimeChartCanvas(
             )
         }
 
-        // Previous close reference line
         quote?.previousClose?.takeIf { it > 0 }?.let { prevClose ->
             val prevY = projection.y(prevClose).toFloat()
             drawLine(
-                color = ChanTheme.TextMuted.copy(alpha = 0.65f),
+                color = palette.inkMuted.copy(alpha = 0.65f),
                 start = Offset(padH.toFloat(), prevY),
                 end = Offset((w - padH).toFloat(), prevY),
                 strokeWidth = 1.2f,
@@ -90,26 +91,53 @@ fun RealtimeChartCanvas(
             )
         }
 
-        // Price path
         if (points.isNotEmpty()) {
+            val lineColor = palette.primaryBrand
             val path = Path()
+            var firstX = padH.toFloat()
+            var lastX = padH.toFloat()
             points.forEachIndexed { idx, pt ->
                 val minute = MarketTime.tradingMinute(pt.time, stock).coerceIn(0.0, duration)
                 val x = (padH + (minute / duration) * plotW).toFloat()
                 val y = projection.y(pt.price).toFloat()
-                if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                if (idx == 0) {
+                    firstX = x
+                    path.moveTo(x, y)
+                } else {
+                    path.lineTo(x, y)
+                }
+                lastX = x
+            }
+            if (points.size >= 2) {
+                val bottomY = (top + plotH).toFloat()
+                val fillPath = Path().apply {
+                    addPath(path)
+                    lineTo(lastX, bottomY)
+                    lineTo(firstX, bottomY)
+                    close()
+                }
+                drawPath(
+                    path = fillPath,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            lineColor.copy(alpha = 0.16f),
+                            lineColor.copy(alpha = 0.0f),
+                        ),
+                        startY = top.toFloat(),
+                        endY = bottomY,
+                    ),
+                )
             }
             drawPath(
                 path = path,
-                color = ChanTheme.Accent,
-                style = Stroke(width = 2.0f),
+                color = lineColor,
+                style = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round),
             )
         }
 
-        // Axis labels on top-most pass
         val density = drawContext.density.density
         textPaint.textSize = 10f * density
-        textPaint.color = ChanTheme.TextSecondary.toArgb()
+        textPaint.color = palette.inkMuted.toArgb()
         drawContext.canvas.nativeCanvas.drawText(
             MarketFormat.price(projection.maximum, stock.decimals),
             (padH + 4).toFloat(),
@@ -143,10 +171,11 @@ fun RankingSparklineCanvas(
     entry: RankingEntry,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalChanPalette.current
     val trend = entry.trend
     val textPaint = remember {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.MONOSPACE
+            typeface = Typeface.SANS_SERIF
         }
     }
 
@@ -165,13 +194,18 @@ fun RankingSparklineCanvas(
         fun xAt(index: Int): Float =
             (index.toDouble() / max(1, trend.size - 1).toDouble() * max(1.0, w - 12.0) + 6.0).toFloat()
 
+        val lineColor = palette.primaryBrand
         val path = Path()
         trend.forEachIndexed { idx, pt ->
             val px = xAt(idx)
             val py = projection.y(pt.price).toFloat()
             if (idx == 0) path.moveTo(px, py) else path.lineTo(px, py)
         }
-        drawPath(path = path, color = ChanTheme.Accent, style = Stroke(width = 1.6f))
+        drawPath(
+            path = path,
+            color = lineColor,
+            style = Stroke(width = 1.8f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
 
         val density = drawContext.density.density
         textPaint.textSize = 9.5f * density
@@ -181,10 +215,10 @@ fun RankingSparklineCanvas(
             } ?: return@forEach
             val mx = xAt(nearestIdx)
             val my = projection.y(marker.price).toFloat()
-            val color = if (marker.side == "buy") ChanTheme.Up else ChanTheme.Down
+            val color = if (marker.side == "buy") palette.positiveRed else palette.negativeGreen
             drawCircle(
                 color = color,
-                radius = 3.2f,
+                radius = 3.5f,
                 center = Offset(mx, my),
             )
             val title = "${if (marker.side == "buy") "买" else "卖"} ${

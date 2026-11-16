@@ -1,353 +1,438 @@
 package cn.oryjk.changuan.presentation.screens
 
+import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.net.toUri
 import cn.oryjk.changuan.BuildConfig
+import cn.oryjk.changuan.domain.AppThemeMode
+import cn.oryjk.changuan.domain.ShizukuAvailability
 import cn.oryjk.changuan.presentation.AppUiState
 import cn.oryjk.changuan.presentation.AuthMode
-import cn.oryjk.changuan.presentation.ChanTheme
+import cn.oryjk.changuan.presentation.LocalChanPalette
+import cn.oryjk.changuan.presentation.designsystem.ActionPill
+import cn.oryjk.changuan.presentation.designsystem.ClarityCard
+import cn.oryjk.changuan.presentation.designsystem.ClarityRadius
+import cn.oryjk.changuan.presentation.designsystem.FixedHeaderPage
+import cn.oryjk.changuan.presentation.designsystem.LedgerHeaderRule
+import cn.oryjk.changuan.presentation.designsystem.PageHeader
+import cn.oryjk.changuan.presentation.designsystem.SegmentedControl
+import cn.oryjk.changuan.presentation.designsystem.StarkBadgeTag
+import cn.oryjk.changuan.presentation.designsystem.tabular
+import kotlinx.coroutines.launch
+
+private val ChanlunDownloadPageUrl = "https://ai.oryjk.cn:82/" + BuildConfig.UPDATE_DIRECTORY
 
 @Composable
 fun AccountScreen(
     state: AppUiState,
-    onSwitchAuthMode: (AuthMode) -> Unit,
-    onLoginWithEmail: (String, String) -> Unit,
-    onSendEmailCode: (String) -> Unit,
-    onRegisterWithEmail: (String, String, String, String?) -> Unit,
-    onLogout: () -> Unit,
-    onDeleteAccount: () -> Unit,
-    onCheckUpdateNow: () -> Unit,
-    onOpenTerms: () -> Unit,
+    onOpenAuth: (AuthMode) -> Unit,
+    onLogout: suspend () -> Unit,
+    onDeleteAccount: suspend () -> Unit,
+    onSelectThemeMode: (AppThemeMode) -> Unit,
+    onOpenEnvironmentDialog: () -> Unit,
+    onOpenInstallerSettings: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onOpenReleaseHistory: () -> Unit,
     modifier: Modifier = Modifier,
+    applyStatusBarPadding: Boolean = true,
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
-    var nickname by remember { mutableStateOf("") }
-    var confirmDelete by remember { mutableStateOf(false) }
+    val palette = LocalChanPalette.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .background(ChanTheme.Sheet),
+    val shizukuStatusText = when {
+        state.shizukuState.useShizuku -> "Shizuku 已就绪"
+        state.shizukuState.enabled && state.shizukuState.availability == ShizukuAvailability.NeedsAuthorization -> "Shizuku 待授权"
+        state.shizukuState.enabled -> "Shizuku 未运行（自动回退系统安装）"
+        else -> "系统安装器"
+    }
+
+    FixedHeaderPage(
+        modifier = modifier,
+        applyStatusBarPadding = applyStatusBarPadding,
+        header = {
+            PageHeader(
+                title = "菜单",
+                subtitle = "账号会话、界面外观、网络环境与更新通道",
+            )
+        },
     ) {
-        if (state.user != null) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(palette.backgroundCanvas)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // Identity Card
+            ClarityCard(
+                contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    text = "当前账号",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ChanTheme.TextPrimary,
-                )
-                Text(
-                    text = state.user.nickname,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = ChanTheme.TextPrimary,
-                )
-                Text(
-                    text = "邮箱密码账号已登录",
-                    fontSize = 13.sp,
-                    color = ChanTheme.TextSecondary,
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = onLogout,
-                        enabled = !state.accountBusy,
-                        shape = RoundedCornerShape(4.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(palette.subtleSurface),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text("退出登录", color = ChanTheme.Accent)
+                        Icon(
+                            imageVector = Icons.Outlined.PersonOutline,
+                            contentDescription = null,
+                            tint = palette.inkPrimary,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
-                    OutlinedButton(
-                        onClick = { confirmDelete = true },
-                        enabled = !state.accountBusy,
-                        shape = RoundedCornerShape(4.dp),
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        Text("删除账号", color = ChanTheme.Up)
+                        val user = state.user
+                        Text(
+                            text = user?.nickname?.takeIf { it.isNotBlank() } ?: "游客看盘中",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = palette.inkPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = if (user != null) {
+                                "账号 ID ${user.userId.take(8)}（${state.environment.shortLabel}）"
+                            } else {
+                                "登录后可跨会话保留个人身份（${state.environment.shortLabel}）"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.inkSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    if (state.user == null) {
+                        ActionPill(
+                            text = "登录 / 注册",
+                            onClick = { onOpenAuth(AuthMode.LOGIN) },
+                        )
+                    } else {
+                        ActionPill(
+                            text = "退出",
+                            outlined = true,
+                            enabled = !state.accountBusy,
+                            onClick = { scope.launch { onLogout() } },
+                        )
+                    }
+                }
+
+                if (state.user == null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        StarkBadgeTag(text = "邮箱密码登录")
+                        StarkBadgeTag(text = "邮箱验证码注册")
                     }
                 }
             }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "账号与登录",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ChanTheme.TextPrimary,
-                )
-                Text(
-                    text = "游客可使用全部行情、结构与收盘榜单功能",
-                    fontSize = 13.sp,
-                    color = ChanTheme.TextSecondary,
-                )
 
+            // Appearance Card
+            ClarityCard(
+                contentPadding = PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AuthModeTab(
-                        title = "账号密码登录",
-                        selected = state.authMode == AuthMode.LOGIN,
-                        onClick = { onSwitchAuthMode(AuthMode.LOGIN) },
+                    Text(
+                        text = "界面外观",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.inkPrimary,
                     )
-                    AuthModeTab(
-                        title = "邮箱验证码注册",
-                        selected = state.authMode == AuthMode.REGISTER,
-                        onClick = { onSwitchAuthMode(AuthMode.REGISTER) },
+                    Text(
+                        text = state.themeMode.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.inkSecondary,
                     )
                 }
-                HorizontalDivider(color = ChanTheme.Line)
-
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("邮箱账号") },
-                    placeholder = { Text("例如 trader@example.com") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                val modes = AppThemeMode.entries
+                SegmentedControl(
+                    options = modes.map { it.label },
+                    selectedIndex = modes.indexOf(state.themeMode).coerceAtLeast(0),
+                    onSelect = { idx -> onSelectThemeMode(modes[idx]) },
+                    compact = true,
                 )
+            }
 
-                if (state.authMode == AuthMode.REGISTER) {
+            // Network & Update Group Card
+            ClarityCard(contentPadding = PaddingValues(0.dp)) {
+                MenuActionRow(
+                    icon = Icons.Outlined.CloudQueue,
+                    title = "API 服务环境",
+                    subtitle = state.environment.baseUrl,
+                    trailingTag = state.environment.shortLabel,
+                    onClick = onOpenEnvironmentDialog,
+                )
+                LedgerHeaderRule()
+                MenuActionRow(
+                    icon = Icons.Outlined.Tune,
+                    title = "更新安装方式",
+                    subtitle = shizukuStatusText,
+                    onClick = onOpenInstallerSettings,
+                )
+                LedgerHeaderRule()
+                MenuActionRow(
+                    icon = Icons.Outlined.SystemUpdate,
+                    title = "检测新版本",
+                    subtitle = "上次检测 ${state.lastUpdateCheckTime}",
+                    trailingTag = "v${BuildConfig.VERSION_NAME}",
+                    onClick = onCheckUpdate,
+                )
+                LedgerHeaderRule()
+                MenuActionRow(
+                    icon = Icons.Outlined.History,
+                    title = "版本更新记录",
+                    subtitle = "查看各版本发布说明与安装包状态",
+                    onClick = onOpenReleaseHistory,
+                )
+                LedgerHeaderRule()
+                MenuActionRow(
+                    icon = Icons.AutoMirrored.Outlined.OpenInNew,
+                    title = "应用下载页",
+                    subtitle = ChanlunDownloadPageUrl,
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, ChanlunDownloadPageUrl.toUri()),
+                            )
+                        }
+                    },
+                )
+            }
+
+            // Danger Action when signed in
+            if (state.user != null) {
+                ClarityCard(contentPadding = PaddingValues(0.dp)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !state.accountBusy, role = Role.Button) {
+                                showDeleteConfirm = true
+                            }
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        OutlinedTextField(
-                            value = code,
-                            onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                            label = { Text("6 位邮箱验证码") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.weight(1f),
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteOutline,
+                            contentDescription = null,
+                            tint = palette.positiveRed,
+                            modifier = Modifier.size(20.dp),
                         )
-                        OutlinedButton(
-                            onClick = { onSendEmailCode(email) },
-                            enabled = !state.accountBusy && state.codeCooldownSeconds == 0 && email.isNotBlank(),
-                            shape = RoundedCornerShape(4.dp),
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             Text(
-                                text = if (state.codeCooldownSeconds > 0) {
-                                    "${state.codeCooldownSeconds} 秒后重发"
-                                } else {
-                                    "获取验证码"
-                                },
-                                fontSize = 13.sp,
-                                color = ChanTheme.Accent,
+                                text = "删除缠观账号",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = palette.positiveRed,
+                            )
+                            Text(
+                                text = "永久移除当前环境中的账号记录并销毁全部登录会话",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.inkMuted,
                             )
                         }
                     }
-
-                    OutlinedTextField(
-                        value = nickname,
-                        onValueChange = { nickname = it },
-                        label = { Text("昵称（选填）") },
-                        placeholder = { Text("默认使用邮箱前缀") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(if (state.authMode == AuthMode.LOGIN) "登录密码" else "设置密码（至少 8 位）") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Button(
-                    onClick = {
-                        if (state.authMode == AuthMode.LOGIN) {
-                            onLoginWithEmail(email, password)
-                        } else {
-                            onRegisterWithEmail(email, code, password, nickname)
-                        }
-                    },
-                    enabled = !state.accountBusy && email.isNotBlank() && password.isNotBlank() &&
-                        (state.authMode == AuthMode.LOGIN || code.length == 6),
-                    shape = RoundedCornerShape(4.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ChanTheme.Accent),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = if (state.authMode == AuthMode.LOGIN) "登录缠观" else "验证邮箱并注册",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                    )
                 }
             }
-        }
 
-        if (state.accountBusy) {
-            StatusBanner(text = "正在处理账号请求，请稍候...")
-        }
-        if (state.accountMessage.isNotEmpty()) {
             Text(
-                text = state.accountMessage,
-                fontSize = 13.sp,
-                color = ChanTheme.Accent,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                text = "缠观 Android v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})  " +
+                    "买卖点为规则化结构识别，仅供研究，不构成买卖建议",
+                style = MaterialTheme.typography.labelSmall.tabular(),
+                color = palette.inkMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
             )
-        }
-        if (state.accountError.isNotEmpty()) {
-            Text(
-                text = state.accountError,
-                fontSize = 13.sp,
-                color = ChanTheme.Up,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            )
-        }
-
-        SectionBreak()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "关于缠观",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = ChanTheme.TextPrimary,
-            )
-            Text(
-                text = "股票与 ETF 行情、量价及缠论结构分析工具",
-                fontSize = 14.sp,
-                color = ChanTheme.TextPrimary,
-            )
-            Text(
-                text = "买卖点为规则化结构识别，不构成买卖建议",
-                fontSize = 13.sp,
-                color = ChanTheme.TextSecondary,
-            )
-            Text(
-                text = "当前版本 v${BuildConfig.VERSION_NAME} (#${BuildConfig.VERSION_CODE})  最近自动巡检 ${state.lastUpdateCheckTime}（每 30 秒自动检测）",
-                fontSize = 12.sp,
-                color = ChanTheme.TextSecondary,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(
-                    onClick = onCheckUpdateNow,
-                    modifier = Modifier.padding(top = 4.dp),
-                ) {
-                    Text("立即检查更新", fontSize = 14.sp, color = ChanTheme.Accent)
-                }
-                TextButton(
-                    onClick = onOpenTerms,
-                    modifier = Modifier.padding(top = 4.dp),
-                ) {
-                    Text("查看缠论与指标术语说明", fontSize = 14.sp, color = ChanTheme.Accent)
-                }
-            }
         }
     }
 
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("删除缠观账号？") },
-            text = {
-                Text("账号与全部登录会话将立即删除。删除后您仍可作为游客使用全部行情与榜单功能。")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDelete = false
-                        onDeleteAccount()
-                    },
+    if (showDeleteConfirm) {
+        Dialog(
+            onDismissRequest = { if (!state.accountBusy) showDeleteConfirm = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ClarityCard(
+                    modifier = Modifier.widthIn(max = 420.dp),
+                    contentPadding = PaddingValues(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("确认删除账号", color = ChanTheme.Up)
+                    Text(
+                        text = "确认删除缠观账号？",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = palette.inkPrimary,
+                    )
+                    Text(
+                        text = "删除后将立即撤销所有设备会话并清理账号凭证，该操作不可恢复。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.inkSecondary,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { showDeleteConfirm = false },
+                            enabled = !state.accountBusy,
+                            shape = ClarityRadius.pill,
+                            border = BorderStroke(1.dp, palette.cardBorder),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("取消", color = palette.inkPrimary)
+                        }
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    onDeleteAccount()
+                                    showDeleteConfirm = false
+                                }
+                            },
+                            enabled = !state.accountBusy,
+                            shape = ClarityRadius.pill,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = palette.positiveRed,
+                                contentColor = palette.onActionPrimary,
+                            ),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("确认删除")
+                        }
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
-                    Text("取消", color = ChanTheme.TextSecondary)
-                }
-            },
-        )
+            }
+        }
     }
 }
 
 @Composable
-private fun AuthModeTab(
+private fun MenuActionRow(
+    icon: ImageVector,
     title: String,
-    selected: Boolean,
+    subtitle: String,
     onClick: () -> Unit,
+    trailingTag: String? = null,
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+    val palette = LocalChanPalette.current
+    Row(
         modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(top = 6.dp),
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = title,
-            fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) ChanTheme.Accent else ChanTheme.TextSecondary,
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = palette.inkSecondary,
+            modifier = Modifier.size(20.dp),
         )
-        Spacer(modifier = Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .width(36.dp)
-                .height(2.dp)
-                .background(if (selected) ChanTheme.Accent else Color.Transparent),
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = palette.inkPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.tabular(),
+                color = palette.inkMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (trailingTag != null) {
+            StarkBadgeTag(text = trailingTag)
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = palette.inkMuted,
+            modifier = Modifier.size(18.dp),
         )
     }
 }

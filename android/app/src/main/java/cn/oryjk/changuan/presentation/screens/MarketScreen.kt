@@ -1,5 +1,6 @@
 package cn.oryjk.changuan.presentation.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -7,18 +8,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,284 +34,403 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.oryjk.changuan.domain.ChartLayers
 import cn.oryjk.changuan.domain.MarketFormat
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketTime
-import cn.oryjk.changuan.domain.SignalRules
 import cn.oryjk.changuan.domain.Timeframe
 import cn.oryjk.changuan.presentation.AppUiState
-import cn.oryjk.changuan.presentation.ChanTheme
+import cn.oryjk.changuan.presentation.LocalChanPalette
 import cn.oryjk.changuan.presentation.charts.MarketChartCanvas
-import java.util.Locale
+import cn.oryjk.changuan.presentation.designsystem.ActionPill
+import cn.oryjk.changuan.presentation.designsystem.ClarityCard
+import cn.oryjk.changuan.presentation.designsystem.ClarityRadius
+import cn.oryjk.changuan.presentation.designsystem.FinancialNumber
+import cn.oryjk.changuan.presentation.designsystem.FixedHeaderPage
+import cn.oryjk.changuan.presentation.designsystem.HeaderIconAction
+import cn.oryjk.changuan.presentation.designsystem.PageHeader
+import cn.oryjk.changuan.presentation.designsystem.RefreshableContent
+import cn.oryjk.changuan.presentation.designsystem.SegmentedControl
+import cn.oryjk.changuan.presentation.designsystem.StarkBadgeTag
+import cn.oryjk.changuan.presentation.designsystem.SummaryItem
+import cn.oryjk.changuan.presentation.designsystem.SummaryStrip
+import cn.oryjk.changuan.presentation.designsystem.tabular
 
 @Composable
 fun MarketScreen(
     state: AppUiState,
-    onChangeTimeframe: (Timeframe) -> Unit,
+    onSelectTimeframe: (Timeframe) -> Unit,
     onToggleLayer: ((ChartLayers) -> ChartLayers) -> Unit,
-    onRetry: () -> Unit,
-    onOpenTerms: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenGlossary: () -> Unit,
     modifier: Modifier = Modifier,
+    applyStatusBarPadding: Boolean = true,
 ) {
-    var selectedCandleIndex by remember(state.stock.secid, state.timeframe) {
+    val palette = LocalChanPalette.current
+    val snapshot = state.snapshot
+    val quote = state.quote
+    val session = MarketTime.session(state.stock)
+    val displayName = quote?.name?.takeIf { it.isNotBlank() }
+        ?: snapshot?.instrument?.name?.takeIf { it.isNotBlank() }
+        ?: state.stock.name
+    val symbol = state.stock.symbol
+    val marketTag = when {
+        symbol.startsWith("688") || symbol.startsWith("689") -> "科创"
+        state.stock.market == "ETF" -> "ETF"
+        state.stock.secid.endsWith(".BJ") -> "北交"
+        else -> null
+    }
+    val decimals = state.stock.decimals
+    val latestPrice = quote?.latest ?: snapshot?.summary?.latest ?: snapshot?.candles?.lastOrNull()?.close
+    val prevClose = quote?.previousClose ?: snapshot?.candles?.dropLast(1)?.lastOrNull()?.close
+    val change = quote?.change
+        ?: snapshot?.summary?.change
+        ?: if (latestPrice != null && prevClose != null) latestPrice - prevClose else null
+    val changePercent = quote?.changePercent
+        ?: snapshot?.summary?.changePercent
+        ?: if (change != null && prevClose != null && prevClose > 0.0) {
+            (change / prevClose) * 100.0
+        } else {
+            null
+        }
+    val quoteTimeText = quote?.time?.let { MarketTime.formatDate(it, "HH:mm:ss", session.zone) }
+    val headerSubtitle = buildString {
+        append("$symbol ${state.stock.market}")
+        if (!quoteTimeText.isNullOrBlank()) {
+            append(" $quoteTimeText")
+        }
+    }
+    val marketOpen = MarketTime.isOpen(stock = state.stock)
+    val statusText = if (marketOpen) "交易中" else "休市/收盘"
+
+    var selectedIndex by remember(snapshot?.instrument?.secid, snapshot?.timeframe, snapshot?.candles?.size) {
         mutableStateOf<Int?>(null)
     }
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(ChanTheme.Page),
-    ) {
-        val isWide = maxWidth >= 900.dp
-        val scrollState = rememberScrollState()
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .background(ChanTheme.Sheet),
-        ) {
-            MarketHeader(state = state)
-            HorizontalDivider(color = ChanTheme.Line)
-            TimeframeStrip(
-                current = state.timeframe,
-                onSelect = { tf ->
-                    selectedCandleIndex = null
-                    onChangeTimeframe(tf)
+    FixedHeaderPage(
+        modifier = modifier,
+        applyStatusBarPadding = applyStatusBarPadding,
+        header = {
+            PageHeader(
+                title = displayName,
+                subtitle = headerSubtitle,
+                titleSuffix = marketTag?.let { tag ->
+                    { StarkBadgeTag(text = tag) }
+                },
+                action = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HeaderIconAction(
+                            icon = Icons.Outlined.Search,
+                            contentDescription = "搜索证券",
+                            onClick = onOpenSearch,
+                        )
+                        HeaderIconAction(
+                            icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                            contentDescription = "缠论术语说明",
+                            onClick = onOpenGlossary,
+                        )
+                    }
                 },
             )
-            HorizontalDivider(color = ChanTheme.Line)
+        },
+    ) {
+        RefreshableContent(
+            isRefreshing = state.refreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
+            actionLabel = "刷新行情与结构",
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val wideLayout = maxWidth >= 840.dp
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    MarketQuoteHero(
+                        latestPrice = latestPrice,
+                        change = change,
+                        changePercent = changePercent,
+                        decimals = decimals,
+                        statusText = statusText,
+                        open = quote?.open ?: snapshot?.candles?.lastOrNull()?.open,
+                        high = quote?.high ?: snapshot?.summary?.high ?: snapshot?.candles?.lastOrNull()?.high,
+                        low = quote?.low ?: snapshot?.summary?.low ?: snapshot?.candles?.lastOrNull()?.low,
+                        previousClose = prevClose,
+                        volume = quote?.volume ?: snapshot?.summary?.volume ?: snapshot?.candles?.lastOrNull()?.volume,
+                        amount = quote?.amount,
+                    )
 
-            if (state.error.isNotEmpty()) {
-                ErrorBanner(message = state.error, onRetry = onRetry)
-            }
-            if (state.loading) {
-                StatusBanner(text = "正在读取行情与结构...")
-            }
+                    val timeframes = Timeframe.entries
+                    val selectedTfIndex = timeframes.indexOf(state.timeframe).coerceAtLeast(0)
+                    SegmentedControl(
+                        options = timeframes.map { it.label },
+                        selectedIndex = selectedTfIndex,
+                        onSelect = { idx -> onSelectTimeframe(timeframes[idx]) },
+                        compact = true,
+                    )
 
-            if (state.timeframe == Timeframe.REALTIME) {
-                QuotePanel(
-                    stock = state.stock,
-                    quote = state.quote,
-                    points = state.series,
-                )
-            } else if (state.snapshot != null) {
-                val snapshot = state.snapshot
-                if (isWide) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(0.62f),
-                        ) {
-                            ChartSection(
-                                snapshot = snapshot,
-                                layers = state.layers,
-                                decimals = state.stock.decimals,
-                                selectedIndex = selectedCandleIndex,
-                                onSelectIndex = { selectedCandleIndex = it },
-                                onToggleLayer = onToggleLayer,
-                                chartHeight = 480,
+                    when {
+                        state.loading && snapshot == null && quote == null -> {
+                            ClarityCard(contentPadding = PaddingValues(24.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = palette.primaryBrand,
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        text = "正在加载行情与缠论结构…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = palette.inkSecondary,
+                                    )
+                                }
+                            }
+                        }
+
+                        state.error.isNotEmpty() && snapshot == null && quote == null -> {
+                            ClarityCard(
+                                contentPadding = PaddingValues(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Text(
+                                    text = state.error,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = palette.warmAmberText,
+                                )
+                                ActionPill(
+                                    text = "重新加载",
+                                    onClick = onRefresh,
+                                )
+                            }
+                        }
+
+                        state.timeframe == Timeframe.REALTIME -> {
+                            QuotePanel(
+                                stock = state.stock,
+                                quote = quote,
+                                points = state.series,
                             )
                         }
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(640.dp)
-                                .background(ChanTheme.Line),
-                        )
-                        Column(
-                            modifier = Modifier.weight(0.38f),
-                        ) {
-                            SignalPanel(
+
+                        snapshot != null -> {
+                            KlineChartCard(
                                 snapshot = snapshot,
-                                decimals = state.stock.decimals,
+                                timeframe = state.timeframe,
+                                layers = state.layers,
+                                decimals = decimals,
+                                selectedIndex = selectedIndex,
+                                onSelectIndex = { selectedIndex = it },
+                                onToggleLayer = onToggleLayer,
                             )
-                            SectionBreak()
-                            ConfluenceSection(state = state)
-                            SectionBreak()
-                            RangeSection(
-                                snapshot = snapshot,
-                                decimals = state.stock.decimals,
-                                onOpenTerms = onOpenTerms,
-                            )
+
+                            if (wideLayout) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    SignalPanel(
+                                        snapshot = snapshot,
+                                        decimals = decimals,
+                                        modifier = Modifier.weight(1.25f),
+                                    )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                                    ) {
+                                        ConfluenceSection(
+                                            confluence = state.confluence,
+                                            loading = state.confluenceLoading,
+                                            error = state.confluenceError,
+                                            decimals = decimals,
+                                            onJumpTimeframe = onSelectTimeframe,
+                                        )
+                                        RangeSection(
+                                            snapshot = snapshot,
+                                            decimals = decimals,
+                                        )
+                                    }
+                                }
+                            } else {
+                                SignalPanel(
+                                    snapshot = snapshot,
+                                    decimals = decimals,
+                                )
+                                ConfluenceSection(
+                                    confluence = state.confluence,
+                                    loading = state.confluenceLoading,
+                                    error = state.confluenceError,
+                                    decimals = decimals,
+                                    onJumpTimeframe = onSelectTimeframe,
+                                )
+                                RangeSection(
+                                    snapshot = snapshot,
+                                    decimals = decimals,
+                                )
+                            }
                         }
                     }
-                } else {
-                    ChartSection(
-                        snapshot = snapshot,
-                        layers = state.layers,
-                        decimals = state.stock.decimals,
-                        selectedIndex = selectedCandleIndex,
-                        onSelectIndex = { selectedCandleIndex = it },
-                        onToggleLayer = onToggleLayer,
-                        chartHeight = 380,
-                    )
-                    SectionBreak()
-                    SignalPanel(
-                        snapshot = snapshot,
-                        decimals = state.stock.decimals,
-                    )
-                    SectionBreak()
-                    ConfluenceSection(state = state)
-                    SectionBreak()
-                    RangeSection(
-                        snapshot = snapshot,
-                        decimals = state.stock.decimals,
-                        onOpenTerms = onOpenTerms,
+
+                    Text(
+                        text = "买卖点为规则化结构识别，仅供研究，不构成买卖建议",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.inkMuted,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                     )
                 }
-            } else if (!state.loading) {
-                Text(
-                    text = "暂无行情，请搜索证券或点击右上角刷新",
-                    fontSize = 14.sp,
-                    color = ChanTheme.TextSecondary,
-                    modifier = Modifier.padding(24.dp),
-                )
             }
-
-            Text(
-                text = "结构识别仅供研究，不构成买卖建议",
-                fontSize = 12.sp,
-                color = ChanTheme.TextSecondary,
-                modifier = Modifier.padding(16.dp),
-            )
         }
     }
 }
 
 @Composable
-private fun MarketHeader(state: AppUiState) {
-    val decimals = state.stock.decimals
-    val latest = if (state.timeframe == Timeframe.REALTIME) {
-        state.quote?.latest
-    } else {
-        state.snapshot?.summary?.latest
-    }
-    val changePct = if (state.timeframe == Timeframe.REALTIME) {
-        state.quote?.changePercent
-    } else {
-        state.snapshot?.summary?.changePercent
-    }
-    val priceColor = ChanTheme.directionColor(changePct ?: 0.0)
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = state.stock.name,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = ChanTheme.TextPrimary,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "${state.stock.symbol}  ${state.stock.market}",
-                fontSize = 12.sp,
-                color = ChanTheme.TextSecondary,
-            )
-        }
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = MarketFormat.price(latest, decimals),
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                color = priceColor,
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Text(
-                text = MarketFormat.percent(changePct),
-                fontSize = 15.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Medium,
-                color = priceColor,
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = state.timeframe.label,
-                fontSize = 12.sp,
-                color = ChanTheme.TextSecondary,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TimeframeStrip(
-    current: Timeframe,
-    onSelect: (Timeframe) -> Unit,
+private fun MarketQuoteHero(
+    latestPrice: Double?,
+    change: Double?,
+    changePercent: Double?,
+    decimals: Int,
+    statusText: String,
+    open: Double?,
+    high: Double?,
+    low: Double?,
+    previousClose: Double?,
+    volume: Double?,
+    amount: Double?,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
-        Timeframe.entries.forEach { tf ->
-            val selected = tf == current
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .clickable { onSelect(tf) }
-                    .padding(top = 10.dp),
+    val palette = LocalChanPalette.current
+    val toneColor = palette.directionColor(change ?: 0.0)
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    text = tf.label,
-                    fontSize = 14.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selected) ChanTheme.Accent else ChanTheme.TextPrimary,
+                FinancialNumber(
+                    value = latestPrice?.let { MarketFormat.price(it, decimals) } ?: "—",
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 34.sp,
+                        lineHeight = 38.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = toneColor,
+                    alignEnd = false,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .width(28.dp)
-                        .height(2.dp)
-                        .background(if (selected) ChanTheme.Accent else Color.Transparent),
-                )
+                if (change != null && changePercent != null) {
+                    Text(
+                        text = "${MarketFormat.signedPrice(change, decimals)}  ${MarketFormat.percent(changePercent)}",
+                        style = MaterialTheme.typography.titleSmall.tabular(),
+                        fontWeight = FontWeight.SemiBold,
+                        color = toneColor,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
             }
+            StarkBadgeTag(text = statusText)
         }
+
+        SummaryStrip(
+            centeredColumns = 3,
+            items = listOf(
+                SummaryItem(
+                    label = "今开",
+                    value = open?.let { MarketFormat.price(it, decimals) } ?: "—",
+                ),
+                SummaryItem(
+                    label = "最高",
+                    value = high?.let { MarketFormat.price(it, decimals) } ?: "—",
+                ),
+                SummaryItem(
+                    label = "最低",
+                    value = low?.let { MarketFormat.price(it, decimals) } ?: "—",
+                ),
+                SummaryItem(
+                    label = "昨收",
+                    value = previousClose?.let { MarketFormat.price(it, decimals) } ?: "—",
+                ),
+                SummaryItem(
+                    label = "成交量",
+                    value = volume?.let { MarketFormat.volume(it) } ?: "—",
+                ),
+                SummaryItem(
+                    label = "成交额",
+                    value = amount?.takeIf { it > 0 }?.let { MarketFormat.volume(it) } ?: "—",
+                ),
+            ),
+        )
     }
 }
 
 @Composable
-private fun ChartSection(
+private fun KlineChartCard(
     snapshot: MarketSnapshot,
+    timeframe: Timeframe,
     layers: ChartLayers,
     decimals: Int,
     selectedIndex: Int?,
     onSelectIndex: (Int?) -> Unit,
     onToggleLayer: ((ChartLayers) -> ChartLayers) -> Unit,
-    chartHeight: Int,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        LayerToggleBar(layers = layers, onToggleLayer = onToggleLayer)
-        if (selectedIndex != null && selectedIndex in snapshot.candles.indices) {
-            CandleDetailBar(
-                snapshot = snapshot,
-                index = selectedIndex,
-                decimals = decimals,
-            )
-        } else {
-            Text(
-                text = "左右拖动查看历史，双指缩放，点按或长按查看单根 K 线详情",
-                fontSize = 12.sp,
-                color = ChanTheme.TextSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+    val palette = LocalChanPalette.current
+    val selectedCandle = selectedIndex?.let { snapshot.candles.getOrNull(it) }
+        ?: snapshot.candles.lastOrNull()
+    val datePattern = if (timeframe == Timeframe.DAILY) "yyyy-MM-dd" else "MM-dd HH:mm"
+    val zone = MarketTime.zone(snapshot.instrument.currency)
+
+    ClarityCard(
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (selectedCandle != null) {
+            val formattedTime = MarketTime.formatDate(selectedCandle.time, datePattern, zone)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (selectedIndex != null) "选中 $formattedTime" else "最新 $formattedTime",
+                    style = MaterialTheme.typography.labelMedium.tabular(),
+                    color = palette.inkPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "开 ${MarketFormat.price(selectedCandle.open, decimals)}  " +
+                        "高 ${MarketFormat.price(selectedCandle.high, decimals)}  " +
+                        "低 ${MarketFormat.price(selectedCandle.low, decimals)}  " +
+                        "收 ${MarketFormat.price(selectedCandle.close, decimals)}",
+                    style = MaterialTheme.typography.labelSmall.tabular(),
+                    color = palette.inkSecondary,
+                    maxLines = 1,
+                )
+            }
         }
+
         MarketChartCanvas(
             snapshot = snapshot,
             layers = layers,
@@ -312,312 +439,85 @@ private fun ChartSection(
             onSelectIndex = onSelectIndex,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(chartHeight.dp),
+                .height(332.dp),
         )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            LayerToggleChip(
+                label = "分型",
+                dotColor = palette.fractalSlate,
+                selected = layers.fractals,
+                onClick = { onToggleLayer { it.copy(fractals = !it.fractals) } },
+            )
+            LayerToggleChip(
+                label = "笔",
+                dotColor = palette.penGold,
+                selected = layers.pens,
+                onClick = { onToggleLayer { it.copy(pens = !it.pens) } },
+            )
+            LayerToggleChip(
+                label = "线段",
+                dotColor = palette.segmentBlue,
+                selected = layers.segments,
+                onClick = { onToggleLayer { it.copy(segments = !it.segments) } },
+            )
+            LayerToggleChip(
+                label = "中枢",
+                dotColor = palette.zhongshuViolet,
+                selected = layers.zhongshu,
+                onClick = { onToggleLayer { it.copy(zhongshu = !it.zhongshu) } },
+            )
+            LayerToggleChip(
+                label = "买卖点",
+                dotColor = palette.positiveRed,
+                selected = layers.points,
+                onClick = { onToggleLayer { it.copy(points = !it.points) } },
+            )
+        }
     }
 }
 
 @Composable
-private fun LayerToggleBar(
-    layers: ChartLayers,
-    onToggleLayer: ((ChartLayers) -> ChartLayers) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        LayerLegendButton(
-            title = "分型",
-            enabled = layers.fractals,
-            color = ChanTheme.Fractal,
-            isBox = false,
-            onClick = { onToggleLayer { it.copy(fractals = !it.fractals) } },
-        )
-        LayerLegendButton(
-            title = "笔",
-            enabled = layers.pens,
-            color = ChanTheme.Gold,
-            isBox = false,
-            onClick = { onToggleLayer { it.copy(pens = !it.pens) } },
-        )
-        LayerLegendButton(
-            title = "线段",
-            enabled = layers.segments,
-            color = ChanTheme.Accent,
-            isBox = false,
-            onClick = { onToggleLayer { it.copy(segments = !it.segments) } },
-        )
-        LayerLegendButton(
-            title = "笔中枢",
-            enabled = layers.zhongshu,
-            color = ChanTheme.Violet,
-            isBox = true,
-            onClick = { onToggleLayer { it.copy(zhongshu = !it.zhongshu) } },
-        )
-        LayerLegendButton(
-            title = "买卖点",
-            enabled = layers.points,
-            color = ChanTheme.Up,
-            isBox = false,
-            onClick = { onToggleLayer { it.copy(points = !it.points) } },
-        )
-    }
-}
-
-@Composable
-private fun LayerLegendButton(
-    title: String,
-    enabled: Boolean,
-    color: Color,
-    isBox: Boolean,
+private fun LayerToggleChip(
+    label: String,
+    dotColor: Color,
+    selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val alpha = if (enabled) 1f else 0.35f
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Box(
-            modifier = Modifier
-                .width(14.dp)
-                .height(if (isBox) 7.dp else 2.5.dp)
-                .background(color.copy(alpha = alpha)),
-        )
-        Spacer(modifier = Modifier.width(5.dp))
-        Text(
-            text = title,
-            fontSize = 12.sp,
-            color = ChanTheme.TextPrimary.copy(alpha = alpha),
-        )
-    }
-}
-
-@Composable
-private fun CandleDetailBar(
-    snapshot: MarketSnapshot,
-    index: Int,
-    decimals: Int,
-) {
-    val candle = snapshot.candles[index]
-    val change = SignalRules.candleChange(snapshot.candles, index)
-    val zone = MarketTime.zone(snapshot.instrument.currency)
-    fun price(v: Double): String = MarketFormat.price(v, decimals)
-
-    Column(
+    val palette = LocalChanPalette.current
+    Surface(
+        color = if (selected) palette.subtleSurface else palette.cardSurface,
+        shape = ClarityRadius.pill,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) palette.inkPrimary else palette.cardBorder,
+        ),
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        Text(
-            text = MarketTime.formatDate(candle.time, "yyyy-MM-dd HH:mm", zone),
-            fontSize = 12.sp,
-            color = ChanTheme.TextSecondary,
-        )
-        Text(
-            text = "开 ${price(candle.open)}  高 ${price(candle.high)}  低 ${price(candle.low)}  收 ${price(candle.close)}",
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            color = ChanTheme.TextPrimary,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = "涨跌 ${MarketFormat.percent(change?.percent)} (${MarketFormat.signedPrice(change?.delta, decimals)})",
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                color = ChanTheme.directionColor(change?.delta ?: 0.0),
-            )
-            Text(
-                text = "量 ${MarketFormat.volume(candle.volume)}",
-                fontSize = 12.sp,
-                color = ChanTheme.TextSecondary,
-            )
-        }
-        if (index in snapshot.macd.indices) {
-            val m = snapshot.macd[index]
-            Text(
-                text = String.format(
-                    Locale.US,
-                    "DIF %.3f  DEA %.3f  MACD %.3f",
-                    m.dif,
-                    m.dea,
-                    m.histogram,
-                ),
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                color = ChanTheme.TextSecondary,
-            )
-        }
-        snapshot.signals.points.filter { it.candleIndex == index }.forEach { pt ->
-            Text(
-                text = "${pt.label} ${if (pt.confirmed) "结构已确认" else "候选"}  首次识别与确认时间未追溯",
-                fontSize = 12.sp,
-                color = if (pt.side == "buy") ChanTheme.Up else ChanTheme.Down,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ConfluenceSection(state: AppUiState) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            text = "多级别联立",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = ChanTheme.TextPrimary,
-        )
-        if (state.confluenceLoading) {
-            Text(
-                text = "正在比对日线、1 小时、30 分钟、5 分钟结构...",
-                fontSize = 13.sp,
-                color = ChanTheme.TextSecondary,
-            )
-        }
-        state.confluence?.let { conf ->
-            Text(
-                text = conf.conclusion,
-                fontSize = 14.sp,
-                color = ChanTheme.TextPrimary,
-            )
-            conf.levels.forEach { lvl ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Text(
-                        text = lvl.timeframeLabel,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = ChanTheme.TextPrimary,
-                        modifier = Modifier.width(68.dp),
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        val ptText = lvl.latestPoint?.let {
-                            "${it.label}  ${if (it.confirmed) "已确认" else "候选"}"
-                        } ?: "暂无买卖点"
-                        Text(
-                            text = ptText,
-                            fontSize = 13.sp,
-                            color = ChanTheme.TextPrimary,
-                        )
-                        Text(
-                            text = if (lvl.lowerConfirmation == null) {
-                                "暂无已确认的次级别印证"
-                            } else {
-                                "已形成同向结构印证"
-                            },
-                            fontSize = 12.sp,
-                            color = ChanTheme.TextSecondary,
-                        )
-                    }
-                }
-            }
-        }
-        if (state.confluenceError.isNotEmpty()) {
-            Text(
-                text = state.confluenceError,
-                fontSize = 12.sp,
-                color = ChanTheme.TextSecondary,
-            )
-        }
-    }
-}
-
-@Composable
-private fun RangeSection(
-    snapshot: MarketSnapshot,
-    decimals: Int,
-    onOpenTerms: () -> Unit,
-) {
-    fun price(v: Double): String = MarketFormat.price(v, decimals)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .clip(ClarityRadius.pill)
+            .clickable(role = Role.Checkbox, onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Text(
-                text = "行情区间",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = ChanTheme.TextPrimary,
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) dotColor else palette.inkMuted),
             )
-            Spacer(modifier = Modifier.weight(1f))
-            TextButton(onClick = onOpenTerms) {
-                Text(
-                    text = "术语说明",
-                    fontSize = 13.sp,
-                    color = ChanTheme.Accent,
-                )
-            }
-        }
-        Text(
-            text = "区间最高 ${price(snapshot.summary.high)}  区间最低 ${price(snapshot.summary.low)}",
-            fontSize = 13.sp,
-            fontFamily = FontFamily.Monospace,
-            color = ChanTheme.TextPrimary,
-        )
-        Text(
-            text = "近 20 根量能 ${MarketFormat.volume(snapshot.summary.volume)}",
-            fontSize = 13.sp,
-            color = ChanTheme.TextSecondary,
-        )
-    }
-}
-
-@Composable
-internal fun SectionBreak() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(8.dp)
-            .background(ChanTheme.Page),
-    )
-}
-
-@Composable
-internal fun ErrorBanner(
-    message: String,
-    onRetry: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = message,
-            fontSize = 13.sp,
-            color = ChanTheme.Up,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onRetry) {
-            Text("重试", fontSize = 13.sp, color = ChanTheme.Accent)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (selected) palette.inkPrimary else palette.inkMuted,
+            )
         }
     }
-}
-
-@Composable
-internal fun StatusBanner(text: String) {
-    Text(
-        text = text,
-        fontSize = 13.sp,
-        color = ChanTheme.TextSecondary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-    )
 }

@@ -23,8 +23,9 @@ def _email_subject_key(normalized_email: str) -> str:
     return hashlib.sha256(('email:' + normalized_email).encode('utf-8')).hexdigest()
 
 
-def _email_code_digest(email_key: str, code: str) -> str:
-    return hashlib.sha256((email_key + ':' + code).encode('utf-8')).hexdigest()
+def _email_code_digest(email_key: str, code: str, pepper: str = '') -> str:
+    payload = f'{pepper}:{email_key}:{code}' if pepper else f'{email_key}:{code}'
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
 
 class AppAuthService:
@@ -37,12 +38,14 @@ class AppAuthService:
         apple: AppleGateway | None,
         now,
         email_gateway: EmailCodeGateway | None = None,
+        code_pepper: str = '',
     ):
         self._reader = reader
         self._writer = writer
         self._apple = apple
         self._now = now
         self._email = email_gateway
+        self._code_pepper = str(code_pepper or '')
         self._dummy_password_hash = hash_password('dummy-password-for-timing')
 
     def challenge(self) -> LoginChallenge:
@@ -81,7 +84,7 @@ class AppAuthService:
         code = f"{secrets.randbelow(1_000_000):06d}"
         challenge = EmailVerificationChallenge(
             email_key=email_key,
-            code_digest=_email_code_digest(email_key, code),
+            code_digest=_email_code_digest(email_key, code, self._code_pepper),
             created_at=now,
             expires_at=now + timedelta(minutes=10),
         )
@@ -99,7 +102,7 @@ class AppAuthService:
         clean_password = validate_password(password)
         clean_code = validate_verification_code(code)
         email_key = _email_subject_key(normalized)
-        code_digest = _email_code_digest(email_key, clean_code)
+        code_digest = _email_code_digest(email_key, clean_code, self._code_pepper)
         now = self._now()
         token = secrets.token_urlsafe(48)
         expires = now + timedelta(days=30)

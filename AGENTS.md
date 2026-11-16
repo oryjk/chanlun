@@ -172,19 +172,19 @@ cd frontend && bun test src && bun run build
 
 ## 八、原生 Android（手机与平板）
 
-- `android/` 使用 100% Kotlin（`2.0.21`）+ Jetpack Compose（`Compose BOM 2024.12.01`）+ 原生 `Canvas` K 线/分时图表，`compileSdk = 35`、`minSdk = 26`，同一应用自适应手机（底部导航、单列布局）与平板/横屏宽屏（左侧导航栏、双栏主从布局）。`android/README.md` 记录构建与邮箱登录配置步骤。
-- 原生 Android 同样遵循 `Presentation -> Application -> Domain`，`Infrastructure` 实现读写/身份/更新端口，`App`（`AppContainer.kt`）是唯一组合根。`domain` 与 `application` 不导入 `android.*`、`androidx.*`、`okhttp3.*` 或 `com.google.gson.*`，由 `android/app/src/test/java/cn/oryjk/changuan/ArchitectureTest.kt` 自动守护。
+- `android/` 使用 100% Kotlin（`2.0.21`）+ Jetpack Compose（`Compose BOM 2024.12.01`）+ 原生 `Canvas` K 线/分时图表，`compileSdk = 35`、`minSdk = 26`，同一应用自适应手机（底部导航 `行情 / 榜单 / 菜单`、单列布局）与平板/横屏宽屏（左侧导航栏、双栏主从布局）。视觉遵循澄境风格（`presentation/Theme.kt` 的 `ChanGuanTheme` / `LocalChanPalette` + `presentation/designsystem/` 组件 + `RobotoCondensed` `tnum` 等宽数字），支持系统 / 浅色 / 深色三种外观切换；「菜单」页内置 API 服务环境切换，默认使用 `开发环境（AI外网）`（`https://ai.oryjk.cn:82/chanlun-dev/`），并可选 `开发环境（233内网）`（`http://172.16.60.233:8000/`）与 `生产环境`（`https://match.oryjk.cn/chanlun/`），各环境登录会话按环境隔离持久化。`android/README.md` 记录构建与邮箱登录配置步骤。
+- 原生 Android 同样遵循 `Presentation -> Application -> Domain`，`Infrastructure` 实现读写/身份/环境/更新端口，`App`（`AppContainer.kt`）是唯一组合根。`domain` 与 `application` 不导入 `android.*`、`androidx.*`、`okhttp3.*` 或 `com.google.gson.*`，`presentation` 不导入 `infrastructure`，由 `android/app/src/test/java/cn/oryjk/changuan/ArchitectureTest.kt` 自动守护。
 - Android 端登录采用 **账号密码登录 + 邮箱验证码注册**（游客可使用全部行情与榜单功能）：
   - `POST /api/app-auth/email/code`：校验未注册邮箱并发送 6 位数字验证码（10 分钟有效、60 秒发送冷却，最多校验 5 次）。
   - `POST /api/app-auth/email/register`：校验邮箱验证码并设置密码（`scrypt` 哈希存储），创建独立 UUID 账号并签发 30 天 Bearer 会话令牌。
   - `POST /api/app-auth/email/login`：使用邮箱与密码登录并签发 30 天 Bearer 会话令牌。
   - 会话恢复（`GET /api/app-auth/session`）、退出（`POST /api/app-auth/logout`）与删除账号（`POST /api/app-auth/delete-account`）与原生身份体系共用，`infrastructure/auth/smtp_gateway.py` 实现 `EmailCodeGateway` 端口。
-- 邮箱认证环境变量：`CHANLUN_EMAIL_AUTH_ENABLED=true`，以及 `CHANLUN_SMTP_HOST`、`CHANLUN_SMTP_PORT`（默认 `465`）、`CHANLUN_SMTP_USERNAME`、`CHANLUN_SMTP_PASSWORD`、`CHANLUN_SMTP_FROM`、`CHANLUN_SMTP_TLS_MODE`（`tls` 或 `starttls`）和 `CHANLUN_APP_AUTH_SECRET`。
-- **30 秒自动检测新版本**：客户端 `AppViewModel`（`UPDATE_CHECK_INTERVAL_MILLIS = 30_000L`）在前台每间隔 **30 秒**自动请求一次 `http://172.16.60.233/chanlun-android/metadata.json`（无缓存），发现远端 `versionCode > BuildConfig.VERSION_CODE` 时自动弹出更新对话框，支持应用内带进度下载、SHA-256 校验与 `FileProvider` 一键调起系统安装器，「账号」页常驻展示当前版本号、最近自动巡检时间与「立即检查更新」按钮。
+- 邮箱认证环境变量：`backend/app/env.py` 在启动时加载根目录 `.env`，支持 `CHANLUN_EMAIL_AUTH_ENABLED`、`CHANLUN_SMTP_*` 与策略货架共用的飞书邮件键名回退（`SMTP_HOST`、`SMTP_PORT`、`SMTP_USERNAME`、`SMTP_PASSWORD`、`SMTP_FROM_EMAIL`、`SMTP_TLS_MODE`、`EMAIL_CODE_PEPPER`）以及 `CHANLUN_APP_AUTH_SECRET`。`.env`（`0600`）仅放服务器本机，严禁入库。
+- **双通道 30 秒自动检测更新与 Shizuku / 系统安装**：客户端 `AppViewModel`（`UPDATE_CHECK_INTERVAL_MILLIS = 30_000L`）在前台每间隔 **30 秒**优先请求 `https://ai.oryjk.cn:82/chanlun-android/metadata.json` 并自动回退 `http://172.16.60.233/chanlun-android/metadata.json`（无缓存），发现远端 `versionCode > BuildConfig.VERSION_CODE` 时弹窗提示，下载器（`ApkDownloader`）支持主备 URL 回退与 SHA-256 校验，安装器校验同包名与签名后优先通过 Shizuku 或回退系统 `FileProvider` 完成安装；「菜单」页展示当前版本号、上次检测时间、「检测新版本」、「更新安装方式」与 `releases.json`「版本更新记录」。
 - **每次修改完任务后的强制打包与 7T 硬盘发布流程**：
   1. 在 `android/app/build.gradle.kts` 中将 `versionCode` 递增 `+1` 并同步更新 `versionName`。
-  2. 运行 `cd android && ./gradlew testDebugUnitTest assembleDebug` 确保测试与打包通过。
+  2. 运行 `cd android && ./gradlew testDebugUnitTest assembleDebug` 确保单元测试（含 Robolectric 澄境截图校验）与打包通过且 0 Kotlin 警告。
   3. 执行 `git add -A && git commit -m "..." && git push origin main` 提交并推送到远端仓库。
-  4. 执行 `./android/scripts/publish-apk.sh --skip-build --note "本次更新说明"` 将新包发布到 **7T 硬盘**（`/data7t/apk-downloads/chanlun-android`），自动更新本机 Nginx 主页下载站（导航入口 `http://172.16.60.233/`，专属下载页 `http://172.16.60.233/chanlun-android/`）。
+  4. 执行 `./android/scripts/publish-apk.sh --skip-build --note "本次更新说明"` 将新包发布到 **7T 硬盘**（`/data7t/apk-downloads/chanlun-android`），保留最近 10 个版本安装包并更新 `releases.json`，自动校验双入口 `http://172.16.60.233/chanlun-android/` 与 `https://ai.oryjk.cn:82/chanlun-android/`（经 `out109` Nginx HTTPS 反向代理）。
 
 

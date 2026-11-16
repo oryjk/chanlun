@@ -1,0 +1,5 @@
+Roboto Condensed (upright variable weight font)
+Source: https://raw.githubusercontent.com/google/fonts/69d0549e8fc7ad72e1531734c81237be401ec4fd/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf
+Upstream commit: 69d0549e8fc7ad72e1531734c81237be401ec4fd
+License: SIL Open Font License 1.1 (RobotoCondensed-OFL.txt)
+Bundled for compact, consistent financial digits; no runtime download.

@@ -1,4 +1,6 @@
 -keepattributes Signature, InnerClasses, EnclosingMethod
 -keepclassmembers class cn.oryjk.changuan.** { *; }
+-keep class cn.oryjk.changuan.infrastructure.update.ShizukuApkUserService { public <init>(); *; }
+-keep class cn.oryjk.changuan.infrastructure.update.AppUpdateChecker$MetadataDto { *; }
 -dontwarn okhttp3.**
 -dontwarn okio.**

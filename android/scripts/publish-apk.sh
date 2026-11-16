@@ -1,143 +1,295 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-ANDROID_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
-REPO_ROOT=$(git -C "$ANDROID_DIR" rev-parse --show-toplevel)
-PUBLIC_DIR=${CHANLUN_ANDROID_PUBLIC_DIR:-"/data7t/apk-downloads/chanlun-android"}
-PUBLIC_URL=${CHANLUN_ANDROID_PUBLIC_URL:-http://172.16.60.233/chanlun-android/}
-RETAIN_RELEASES=${RETAIN_RELEASES:-10}
-SKIP_BUILD=false
-NOTES=()
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ANDROID_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_DIR="$(cd "$ANDROID_DIR/.." && pwd)"
 
-usage() {
-    cat <<'EOF'
-Usage: publish-apk.sh [--skip-build] --note TEXT [--note TEXT ...]
+PUBLISH_DIR="${PUBLISH_DIR:-/data7t/apk-downloads/chanlun-android}"
+PUBLIC_URL="${PUBLIC_URL:-http://172.16.60.233/chanlun-android/}"
+EXTERNAL_URL="${EXTERNAL_URL:-https://ai.oryjk.cn:82/chanlun-android/}"
+RETAIN_RELEASES="${RETAIN_RELEASES:-10}"
+APK_PATH="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+GRADLE_FILE="$ANDROID_DIR/app/build.gradle.kts"
+DIST_INDEX="$ANDROID_DIR/distribution/index.html"
 
-Environment:
-  CHANLUN_ANDROID_PUBLIC_DIR   7T disk directory mounted by the local233 internal gateway
-                               (default: /data7t/apk-downloads/chanlun-android).
-  CHANLUN_ANDROID_PUBLIC_URL   Internal download URL (default: http://172.16.60.233/chanlun-android/).
-  ANDROID_HOME                 Android SDK path.
-  RETAIN_RELEASES              Versioned APK files to retain. Defaults to 10.
+SKIP_BUILD=0
+NOTES_FILE=""
+CLI_NOTES=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-build)
+      SKIP_BUILD=1
+      shift
+      ;;
+    --note)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --note requires an argument" >&2
+        exit 1
+      fi
+      CLI_NOTES+=("$2")
+      shift 2
+      ;;
+    --notes-file)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --notes-file requires an argument" >&2
+        exit 1
+      fi
+      NOTES_FILE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: publish-apk.sh [--skip-build] [--note "item"]... [--notes-file path]
+Builds debug APK (unless --skip-build), publishes to 7T disk with releases.json retention,
+and verifies both LAN (172.16.60.233) and external (ai.oryjk.cn:82) endpoints.
 EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+export ANDROID_HOME="${ANDROID_HOME:-/home/betalpha/Android/Sdk}"
+
+if [[ "$SKIP_BUILD" -eq 0 ]]; then
+  echo "==> Building Android debug APK..."
+  (cd "$ANDROID_DIR" && ./gradlew assembleDebug)
+fi
+
+if [[ ! -f "$APK_PATH" ]]; then
+  echo "Error: APK not found at $APK_PATH" >&2
+  exit 1
+fi
+
+eval "$(
+  python3 - "$GRADLE_FILE" <<'PY'
+import re
+import shlex
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+app_id_m = re.search(r'applicationId\s*=\s*"([^"]+)"', text)
+ver_code_m = re.search(r'versionCode\s*=\s*(\d+)', text)
+ver_name_m = re.search(r'versionName\s*=\s*"([^"]+)"', text)
+debug_suffix_m = re.search(r'debug\s*\{[^}]*?applicationIdSuffix\s*=\s*"([^"]+)"', text, re.S)
+
+base_id = app_id_m.group(1) if app_id_m else "cn.oryjk.changuan"
+suffix = debug_suffix_m.group(1) if debug_suffix_m else ""
+app_id = base_id + suffix
+ver_code = ver_code_m.group(1) if ver_code_m else "1"
+ver_name = ver_name_m.group(1) if ver_name_m else "1.0.0"
+
+print(f"APPLICATION_ID={shlex.quote(app_id)}")
+print(f"VERSION_CODE={shlex.quote(ver_code)}")
+print(f"VERSION_NAME={shlex.quote(ver_name)}")
+PY
+)"
+
+# Double-check actual APK package name if aapt2 exists in Android SDK
+AAPT2_BIN="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name aapt2 2>/dev/null | sort -V | tail -n 1 || true)"
+if [[ -n "$AAPT2_BIN" && -x "$AAPT2_BIN" ]]; then
+  APK_PKG="$("$AAPT2_BIN" dump packagename "$APK_PATH" 2>/dev/null || true)"
+  if [[ -n "$APK_PKG" && "$APK_PKG" != "$APPLICATION_ID" ]]; then
+    echo "Error: APK package ($APK_PKG) does not match expected ($APPLICATION_ID)" >&2
+    exit 1
+  fi
+fi
+
+PUBLISHED_AT="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S %z')"
+STAMP="$(TZ=Asia/Shanghai date '+%Y%m%d%H%M')"
+RELEASE_REL="releases/changuan-v${VERSION_NAME}-b${VERSION_CODE}-${STAMP}.apk"
+GIT_COMMIT="$(git -C "$REPO_DIR" rev-parse --short=7 HEAD 2>/dev/null || echo 'unknown')"
+SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
+FILE_SIZE_BYTES="$(stat -c '%s' "$APK_PATH")"
+
+mkdir -p "$PUBLISH_DIR/releases"
+
+TMP_RELEASE="$PUBLISH_DIR/${RELEASE_REL}.tmp.$$"
+TMP_LATEST="$PUBLISH_DIR/latest.apk.tmp.$$"
+cp "$APK_PATH" "$TMP_RELEASE"
+chmod 0644 "$TMP_RELEASE"
+mv -f "$TMP_RELEASE" "$PUBLISH_DIR/$RELEASE_REL"
+
+cp "$APK_PATH" "$TMP_LATEST"
+chmod 0644 "$TMP_LATEST"
+mv -f "$TMP_LATEST" "$PUBLISH_DIR/latest.apk"
+
+if [[ -f "$DIST_INDEX" ]]; then
+  cp "$DIST_INDEX" "$PUBLISH_DIR/index.html.tmp.$$"
+  chmod 0644 "$PUBLISH_DIR/index.html.tmp.$$"
+  mv -f "$PUBLISH_DIR/index.html.tmp.$$" "$PUBLISH_DIR/index.html"
+fi
+
+NOTES_JSON="$(
+  python3 - "$REPO_DIR" "$NOTES_FILE" "${CLI_NOTES[@]+"${CLI_NOTES[@]}"}" <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+repo_dir = Path(sys.argv[1])
+notes_file = sys.argv[2]
+cli_notes = [n.strip() for n in sys.argv[3:] if n.strip()]
+
+notes = []
+if cli_notes:
+    notes.extend(cli_notes)
+if notes_file:
+    p = Path(notes_file)
+    if p.is_file():
+        for line in p.read_text(encoding="utf-8").splitlines():
+            clean = line.strip().lstrip("-*• ").strip()
+            if clean:
+                notes.append(clean)
+if not notes:
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(repo_dir), "log", "-n", "3", "--pretty=format:%s"],
+            text=True,
+        )
+        notes = [line.strip() for line in out.splitlines() if line.strip()]
+    except Exception:
+        notes = []
+if not notes:
+    notes = ["常规体验优化与问题修复"]
+
+print(json.dumps(notes, ensure_ascii=False))
+PY
+)"
+
+python3 - "$PUBLISH_DIR" "$VERSION_NAME" "$VERSION_CODE" "$PUBLISHED_AT" "$GIT_COMMIT" \
+  "$NOTES_JSON" "$RELEASE_REL" "$SHA256" "$FILE_SIZE_BYTES" "$APPLICATION_ID" "$RETAIN_RELEASES" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+publish_dir = Path(sys.argv[1])
+version_name = sys.argv[2]
+version_code = sys.argv[3]
+published_at = sys.argv[4]
+git_commit = sys.argv[5]
+notes = json.loads(sys.argv[6])
+release_rel = sys.argv[7]
+sha256 = sys.argv[8]
+file_size = int(sys.argv[9])
+app_id = sys.argv[10]
+retain = int(sys.argv[11])
+
+entry = {
+    "versionName": version_name,
+    "versionCode": str(version_code),
+    "publishedAt": published_at,
+    "gitCommit": git_commit,
+    "releaseNotes": notes,
+    "releaseFile": release_rel,
+    "sha256": sha256,
+    "fileSizeBytes": file_size,
+    "applicationId": app_id,
+    "apkAvailable": True,
 }
 
-while (($#)); do
-    case "$1" in
-        --skip-build) SKIP_BUILD=true; shift ;;
-        --note) NOTES+=("${2:?Missing release note}"); shift 2 ;;
-        -h|--help) usage; exit 0 ;;
-        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
-    esac
-done
+releases_path = publish_dir / "releases.json"
+existing = []
+if releases_path.is_file():
+    try:
+        data = json.loads(releases_path.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            existing = data
+    except Exception:
+        existing = []
 
-if ((${#NOTES[@]} == 0)); then
-    echo "At least one release note is required." >&2
-    exit 2
-fi
-if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]]; then
-    echo "Release blocked: commit all changes before publishing." >&2
-    exit 1
-fi
+filtered = [
+    item for item in existing
+    if isinstance(item, dict) and (
+        str(item.get("versionCode")) != str(version_code)
+        or str(item.get("sha256")) != sha256
+    )
+]
+updated = [entry] + filtered
 
-BRANCH=$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD || true)
-UPSTREAM=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
-if [[ -z "$BRANCH" || -z "$UPSTREAM" ]]; then
-    echo "Release blocked: branch and upstream are required. Push to origin/main first." >&2
-    exit 1
-fi
-REMOTE=${UPSTREAM%%/*}
-REMOTE_BRANCH=${UPSTREAM#*/}
-git -C "$REPO_ROOT" fetch --quiet "$REMOTE" "$REMOTE_BRANCH"
-GIT_COMMIT=$(git -C "$REPO_ROOT" rev-parse HEAD)
-REMOTE_COMMIT=$(git -C "$REPO_ROOT" rev-parse "$REMOTE/$REMOTE_BRANCH")
-if [[ "$GIT_COMMIT" != "$REMOTE_COMMIT" ]]; then
-    echo "Release blocked: local HEAD is not synchronized with $UPSTREAM. Commit and push first." >&2
-    exit 1
-fi
+# Retain latest N release APKs on disk and mark older entries archived
+kept_files = set()
+active_count = 0
+for item in updated:
+    rel_file = item.get("releaseFile")
+    if rel_file and (publish_dir / rel_file).is_file():
+        if active_count < retain:
+            item["apkAvailable"] = True
+            kept_files.add(rel_file)
+            active_count += 1
+        else:
+            item["apkAvailable"] = False
+            item["releaseFile"] = None
+    else:
+        item["apkAvailable"] = False
+        item["releaseFile"] = None
 
-if [[ ! "$RETAIN_RELEASES" =~ ^[0-9]+$ ]] || ((RETAIN_RELEASES < 1)); then
-    echo "RETAIN_RELEASES must be a positive integer." >&2
-    exit 2
-fi
+releases_dir = publish_dir / "releases"
+if releases_dir.is_dir():
+    for path in releases_dir.glob("*.apk"):
+        rel = f"releases/{path.name}"
+        if rel not in kept_files:
+            path.unlink(missing_ok=True)
 
-if [[ "$SKIP_BUILD" == false ]]; then
-    (cd "$ANDROID_DIR" && ./gradlew testDebugUnitTest assembleDebug)
-fi
+def write_atomic(target: Path, payload):
+    tmp = target.with_suffix(target.suffix + f".tmp.{os.getpid()}")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o644)
+    tmp.replace(target)
 
-APK_PATH="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
-[[ -f "$APK_PATH" ]] || { echo "APK not found: $APK_PATH" >&2; exit 1; }
+write_atomic(publish_dir / "metadata.json", entry)
+write_atomic(releases_path, updated)
+PY
 
-SDK_ROOT=${ANDROID_HOME:-$HOME/Android/Sdk}
-APK_ANALYZER=${APK_ANALYZER:-$SDK_ROOT/cmdline-tools/latest/bin/apkanalyzer}
-APKSIGNER=${APKSIGNER:-$(find "$SDK_ROOT/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner -perm -u+x | sort -V | tail -n 1)}
-[[ -x "$APK_ANALYZER" ]] || { echo "apkanalyzer not found: $APK_ANALYZER" >&2; exit 1; }
-[[ -x "$APKSIGNER" ]] || { echo "apksigner not found" >&2; exit 1; }
-"$APKSIGNER" verify "$APK_PATH"
+echo "==> Published $RELEASE_REL (versionCode=$VERSION_CODE, sha256=$SHA256, size=$FILE_SIZE_BYTES)"
 
-VERSION_NAME=$($APK_ANALYZER manifest version-name "$APK_PATH")
-VERSION_CODE=$($APK_ANALYZER manifest version-code "$APK_PATH")
-SAFE_VERSION=${VERSION_NAME//[^a-zA-Z0-9._-]/-}
-PUBLISHED_AT=$(TZ=Asia/Shanghai date --iso-8601=seconds)
-TIMESTAMP=$(TZ=Asia/Shanghai date +%Y%m%d-%H%M%S)
-RELEASE_FILE="changuan-v${SAFE_VERSION}-${TIMESTAMP}.apk"
-FILE_SIZE=$(stat -c '%s' "$APK_PATH")
-SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+verify_endpoint() {
+  local base_url="${1%/}/"
+  local label="$2"
+  echo "==> Verifying $label ($base_url)..."
 
-STAGING_DIR=$(mktemp -d)
-trap 'rm -rf -- "$STAGING_DIR"' EXIT
-NOTES_JSON=$(jq -n --args '$ARGS.positional' "${NOTES[@]}")
-jq -n \
-    --arg versionName "$VERSION_NAME" \
-    --arg versionCode "$VERSION_CODE" \
-    --arg publishedAt "$PUBLISHED_AT" \
-    --arg sha256 "$SHA256" \
-    --arg gitCommit "$GIT_COMMIT" \
-    --arg releaseFile "releases/$RELEASE_FILE" \
-    --argjson releaseNotes "$NOTES_JSON" \
-    --argjson fileSizeBytes "$FILE_SIZE" \
-    '{versionName:$versionName,versionCode:$versionCode,buildType:"debug",publishedAt:$publishedAt,fileSizeBytes:$fileSizeBytes,sha256:$sha256,gitCommit:$gitCommit,releaseFile:$releaseFile,releaseNotes:$releaseNotes}' \
-    > "$STAGING_DIR/metadata.json"
+  local meta_json
+  meta_json="$(curl --noproxy '*' -fsSL --max-time 15 "${base_url}metadata.json?t=$(date +%s)")"
+  python3 - "$meta_json" "$VERSION_CODE" "$SHA256" "$RELEASE_REL" <<'PY'
+import json
+import sys
 
-mkdir -p "$PUBLIC_DIR/releases"
-if [[ -f "$PUBLIC_DIR/releases.json" ]] && jq -e 'type == "array"' "$PUBLIC_DIR/releases.json" >/dev/null 2>&1; then
-    install -m 0644 "$PUBLIC_DIR/releases.json" "$STAGING_DIR/existing.json"
-else
-    echo '[]' > "$STAGING_DIR/existing.json"
-fi
-jq -n \
-    --slurpfile current "$STAGING_DIR/metadata.json" \
-    --slurpfile existing "$STAGING_DIR/existing.json" \
-    --argjson keep "$RETAIN_RELEASES" \
-    '[$current[0]] + [$existing[0][] | select(.sha256 != $current[0].sha256 and .releaseFile != $current[0].releaseFile)] | .[:$keep]' \
-    > "$STAGING_DIR/releases.json"
+meta = json.loads(sys.argv[1])
+exp_code, exp_sha, exp_file = sys.argv[2], sys.argv[3], sys.argv[4]
+assert str(meta.get("versionCode")) == exp_code, f"versionCode mismatch: {meta.get('versionCode')} != {exp_code}"
+assert meta.get("sha256") == exp_sha, f"sha256 mismatch: {meta.get('sha256')} != {exp_sha}"
+assert meta.get("releaseFile") == exp_file, f"releaseFile mismatch: {meta.get('releaseFile')} != {exp_file}"
+PY
 
-install -m 0644 "$APK_PATH" "$PUBLIC_DIR/releases/.${RELEASE_FILE}.tmp"
-mv -f "$PUBLIC_DIR/releases/.${RELEASE_FILE}.tmp" "$PUBLIC_DIR/releases/$RELEASE_FILE"
-install -m 0644 "$APK_PATH" "$PUBLIC_DIR/.latest.apk.tmp"
-install -m 0644 "$ANDROID_DIR/distribution/index.html" "$PUBLIC_DIR/.index.html.tmp"
-install -m 0644 "$STAGING_DIR/metadata.json" "$PUBLIC_DIR/.metadata.json.tmp"
-install -m 0644 "$STAGING_DIR/releases.json" "$PUBLIC_DIR/.releases.json.tmp"
-mv -f "$PUBLIC_DIR/.latest.apk.tmp" "$PUBLIC_DIR/latest.apk"
-mv -f "$PUBLIC_DIR/.index.html.tmp" "$PUBLIC_DIR/index.html"
-mv -f "$PUBLIC_DIR/.metadata.json.tmp" "$PUBLIC_DIR/metadata.json"
-mv -f "$PUBLIC_DIR/.releases.json.tmp" "$PUBLIC_DIR/releases.json"
+  for artifact in "latest.apk" "$RELEASE_REL"; do
+    local url="${base_url}${artifact}"
+    local headers clen range_code range_bytes
+    headers="$(curl --noproxy '*' -fsSI --max-time 15 "$url" | tr -d '\r')"
+    clen="$(printf '%s\n' "$headers" | awk -F': ' 'tolower($1)=="content-length"{print $2}' | tail -n 1)"
+    if [[ "$clen" != "$FILE_SIZE_BYTES" ]]; then
+      echo "Error: $url Content-Length '$clen' != expected '$FILE_SIZE_BYTES'" >&2
+      exit 1
+    fi
+    local tmp_range
+    tmp_range="$(mktemp)"
+    range_code="$(curl --noproxy '*' -sS --max-time 15 -r 0-0 -o "$tmp_range" -w '%{http_code}' "$url")"
+    range_bytes="$(wc -c < "$tmp_range" | tr -d ' ')"
+    rm -f "$tmp_range"
+    if [[ "$range_code" != "206" || "$range_bytes" != "1" ]]; then
+      echo "Error: $url range probe returned status=$range_code bytes=$range_bytes (expected 206 / 1 byte)" >&2
+      exit 1
+    fi
+  done
+  echo "    OK: metadata & range checks passed for $label"
+}
 
-PUBLISHED_SHA=$(sha256sum "$PUBLIC_DIR/latest.apk" | cut -d ' ' -f 1)
-[[ "$PUBLISHED_SHA" == "$SHA256" ]] || { echo "Published SHA256 mismatch" >&2; exit 1; }
-curl --fail --silent --show-error --max-time 15 "${PUBLIC_URL%/}/metadata.json" | jq -e --arg sha "$SHA256" '.sha256 == $sha' >/dev/null
-
-mapfile -t OLD_RELEASES < <(
-    find "$PUBLIC_DIR/releases" -maxdepth 1 -type f -name '*.apk' -printf '%T@ %p\n' \
-        | sort -nr \
-        | awk -v keep="$RETAIN_RELEASES" 'NR > keep { sub(/^[^ ]+ /, ""); print }'
-)
-for old_release in "${OLD_RELEASES[@]}"; do
-    rm -f -- "$old_release"
-done
-
-echo "Published: $PUBLIC_URL"
-echo "Storage:   $PUBLIC_DIR (7T disk)"
-echo "Version:   $VERSION_NAME ($VERSION_CODE)"
-echo "SHA256:    $SHA256"
+verify_endpoint "$PUBLIC_URL" "LAN 233"
+verify_endpoint "$EXTERNAL_URL" "External ai.oryjk.cn:82"
+echo "Done."

@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -28,7 +27,7 @@ import cn.oryjk.changuan.domain.MarketFormat
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketTime
 import cn.oryjk.changuan.domain.PriceProjection
-import cn.oryjk.changuan.presentation.ChanTheme
+import cn.oryjk.changuan.presentation.LocalChanPalette
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -42,6 +41,7 @@ fun MarketChartCanvas(
     onSelectIndex: (Int?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalChanPalette.current
     val candles = snapshot.candles
     var viewport by remember(snapshot.instrument.secid, snapshot.timeframe, candles.size) {
         mutableStateOf(ChartViewport.initial(candles.size))
@@ -53,7 +53,7 @@ fun MarketChartCanvas(
 
     val textPaint = remember {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.MONOSPACE
+            typeface = Typeface.SANS_SERIF
         }
     }
 
@@ -96,8 +96,8 @@ fun MarketChartCanvas(
         if (candles.isEmpty()) return@Canvas
         val w = size.width.toDouble()
         val h = size.height.toDouble()
-        val padLeft = 8.0
-        val padRight = 8.0
+        val padLeft = 12.0
+        val padRight = 12.0
         val plotWidth = max(1.0, w - padLeft - padRight)
 
         val mainTop = 14.0
@@ -109,7 +109,7 @@ fun MarketChartCanvas(
         val volBottom = volTop + volHeight
 
         val macdTop = volBottom + 12.0
-        val macdHeight = max(24.0, h - macdTop - 20.0)
+        val macdHeight = max(24.0, h - macdTop - 22.0)
         val macdBottom = macdTop + macdHeight
 
         val startIdx = max(0, viewport.lower.toInt())
@@ -155,20 +155,20 @@ fun MarketChartCanvas(
         for (step in 0..3) {
             val y = (mainTop + mainHeight * step / 3.0).toFloat()
             drawLine(
-                color = ChanTheme.Line,
+                color = palette.cardBorder,
                 start = Offset(padLeft.toFloat(), y),
                 end = Offset((w - padRight).toFloat(), y),
                 strokeWidth = 1f,
             )
         }
         drawLine(
-            color = ChanTheme.Line,
+            color = palette.cardBorder,
             start = Offset(padLeft.toFloat(), volTop.toFloat()),
             end = Offset((w - padRight).toFloat(), volTop.toFloat()),
             strokeWidth = 1f,
         )
         drawLine(
-            color = ChanTheme.Line,
+            color = palette.cardBorder,
             start = Offset(padLeft.toFloat(), macdTop.toFloat()),
             end = Offset((w - padRight).toFloat(), macdTop.toFloat()),
             strokeWidth = 1f,
@@ -187,12 +187,12 @@ fun MarketChartCanvas(
                 val rectTop = min(yTop, yBottom)
                 val rectHeight = max(2f, abs(yBottom - yTop))
                 drawRect(
-                    color = ChanTheme.Violet.copy(alpha = 0.11f),
+                    color = palette.zhongshuViolet.copy(alpha = if (palette.isDark) 0.16f else 0.10f),
                     topLeft = Offset(rectLeft, rectTop),
                     size = Size(rectWidth, rectHeight),
                 )
                 drawRect(
-                    color = ChanTheme.Violet.copy(alpha = if (z.confirmed) 0.78f else 0.45f),
+                    color = palette.zhongshuViolet.copy(alpha = if (z.confirmed) 0.78f else 0.45f),
                     topLeft = Offset(rectLeft, rectTop),
                     size = Size(rectWidth, rectHeight),
                     style = Stroke(
@@ -209,7 +209,7 @@ fun MarketChartCanvas(
             val c = candles[i]
             val cx = xForIndex(i)
             val isUp = c.close >= c.open
-            val barColor = if (isUp) ChanTheme.Up else ChanTheme.Down
+            val barColor = if (isUp) palette.positiveRed else palette.negativeGreen
             val highY = priceProjection.y(c.high).toFloat()
             val lowY = priceProjection.y(c.low).toFloat()
             val openY = priceProjection.y(c.open).toFloat()
@@ -232,7 +232,7 @@ fun MarketChartCanvas(
             val volRatio = (c.volume / maxVol).coerceIn(0.0, 1.0)
             val vBarH = (volHeight * volRatio).toFloat()
             drawRect(
-                color = barColor.copy(alpha = 0.7f),
+                color = barColor.copy(alpha = 0.68f),
                 topLeft = Offset(cx - bodyWidth / 2f, volBottom.toFloat() - vBarH),
                 size = Size(bodyWidth, vBarH),
             )
@@ -249,7 +249,7 @@ fun MarketChartCanvas(
             }?.coerceAtLeast(0.001) ?: 1.0
             val zeroY = (macdTop + macdHeight / 2.0).toFloat()
             drawLine(
-                color = ChanTheme.Line,
+                color = palette.cardBorder,
                 start = Offset(padLeft.toFloat(), zeroY),
                 end = Offset((w - padRight).toFloat(), zeroY),
                 strokeWidth = 1f,
@@ -265,9 +265,9 @@ fun MarketChartCanvas(
                 val m = snapshot.macd[i]
                 val cx = xForIndex(i)
                 val hY = macdY(m.histogram)
-                val histColor = if (m.histogram >= 0) ChanTheme.Up else ChanTheme.Down
+                val histColor = if (m.histogram >= 0) palette.positiveRed else palette.negativeGreen
                 drawLine(
-                    color = histColor.copy(alpha = 0.75f),
+                    color = histColor.copy(alpha = 0.72f),
                     start = Offset(cx, zeroY),
                     end = Offset(cx, hY),
                     strokeWidth = max(1.2f, bodyWidth * 0.6f),
@@ -284,8 +284,8 @@ fun MarketChartCanvas(
                 }
             }
             if (started) {
-                drawPath(difPath, color = ChanTheme.Accent, style = Stroke(width = 1.5f))
-                drawPath(deaPath, color = ChanTheme.Gold, style = Stroke(width = 1.5f))
+                drawPath(difPath, color = palette.segmentBlue, style = Stroke(width = 1.5f))
+                drawPath(deaPath, color = palette.penGold, style = Stroke(width = 1.5f))
             }
         }
 
@@ -296,7 +296,7 @@ fun MarketChartCanvas(
                 val cx = xForIndex(f.candleIndex)
                 val cy = priceProjection.y(f.price).toFloat() + if (f.type == "top") -6f else 6f
                 drawCircle(
-                    color = ChanTheme.Fractal,
+                    color = palette.fractalSlate,
                     radius = 3.2f,
                     center = Offset(cx, cy),
                 )
@@ -312,7 +312,7 @@ fun MarketChartCanvas(
                 val x2 = xForIndex(pen.endIndex)
                 val y2 = priceProjection.y(pen.endPrice).toFloat()
                 drawLine(
-                    color = ChanTheme.Gold,
+                    color = palette.penGold,
                     start = Offset(x1, y1),
                     end = Offset(x2, y2),
                     strokeWidth = 2.0f,
@@ -330,7 +330,7 @@ fun MarketChartCanvas(
                 val x2 = xForIndex(seg.endIndex)
                 val y2 = priceProjection.y(seg.endPrice).toFloat()
                 drawLine(
-                    color = ChanTheme.Accent,
+                    color = palette.segmentBlue,
                     start = Offset(x1, y1),
                     end = Offset(x2, y2),
                     strokeWidth = 2.8f,
@@ -345,7 +345,7 @@ fun MarketChartCanvas(
                 val invY = priceProjection.y(invPrice).toFloat()
                 if (invY in mainTop.toFloat()..mainBottom.toFloat()) {
                     drawLine(
-                        color = ChanTheme.Violet.copy(alpha = 0.7f),
+                        color = palette.zhongshuViolet.copy(alpha = 0.72f),
                         start = Offset(padLeft.toFloat(), invY),
                         end = Offset((w - padRight).toFloat(), invY),
                         strokeWidth = 1.2f,
@@ -359,7 +359,7 @@ fun MarketChartCanvas(
         selectedIndex?.takeIf { it in startIdx..endIdx }?.let { selIdx ->
             val sx = xForIndex(selIdx)
             drawLine(
-                color = ChanTheme.Accent.copy(alpha = 0.45f),
+                color = palette.inkSecondary.copy(alpha = 0.55f),
                 start = Offset(sx, mainTop.toFloat()),
                 end = Offset(sx, macdBottom.toFloat()),
                 strokeWidth = 1.2f,
@@ -371,8 +371,7 @@ fun MarketChartCanvas(
         val density = drawContext.density.density
         textPaint.textSize = 10f * density
 
-        // Axis price labels
-        textPaint.color = ChanTheme.TextSecondary.toArgb()
+        textPaint.color = palette.inkMuted.toArgb()
         drawContext.canvas.nativeCanvas.drawText(
             MarketFormat.price(priceProjection.maximum, decimals),
             (padLeft + 4).toFloat(),
@@ -386,7 +385,6 @@ fun MarketChartCanvas(
             textPaint,
         )
 
-        // Zhongshu labels on top-most layer so they are never occluded by candles or pens
         if (layers.zhongshu) {
             snapshot.analysis.zhongshu.forEach { z ->
                 if (z.endIndex < startIdx || z.startIndex > endIdx) return@forEach
@@ -397,12 +395,12 @@ fun MarketChartCanvas(
                 val badgeLeft = (x1 + 3f).coerceIn(padLeft.toFloat(), (w - padRight - textWidth - 10).toFloat())
                 val badgeTop = (yTop - 16f).coerceAtLeast(mainTop.toFloat() + 2f)
                 drawRoundRect(
-                    color = ChanTheme.Sheet.copy(alpha = 0.92f),
+                    color = palette.backgroundCanvas.copy(alpha = 0.92f),
                     topLeft = Offset(badgeLeft, badgeTop),
                     size = Size(textWidth + 8f, 15f),
                     cornerRadius = CornerRadius(3f, 3f),
                 )
-                textPaint.color = ChanTheme.Violet.toArgb()
+                textPaint.color = palette.zhongshuViolet.toArgb()
                 drawContext.canvas.nativeCanvas.drawText(
                     label,
                     badgeLeft + 4f,
@@ -412,14 +410,13 @@ fun MarketChartCanvas(
             }
         }
 
-        // Buy/Sell signal badges on top-most layer
         if (layers.points) {
             snapshot.signals.points.forEach { pt ->
                 if (pt.candleIndex !in startIdx..endIdx) return@forEach
                 val cx = xForIndex(pt.candleIndex)
                 val cy = priceProjection.y(pt.price).toFloat()
                 val isBuy = pt.side == "buy"
-                val badgeColor = if (isBuy) ChanTheme.Up else ChanTheme.Down
+                val badgeColor = if (isBuy) palette.positiveRed else palette.negativeGreen
                 val tag = "${pt.shortTag}${if (pt.confirmed) "" else "?"}"
                 val tw = textPaint.measureText(tag)
                 val boxW = tw + 10f
@@ -431,7 +428,7 @@ fun MarketChartCanvas(
                     max(mainTop.toFloat() + 2f, cy - boxH - 6f)
                 }
                 drawRoundRect(
-                    color = if (pt.confirmed) badgeColor else ChanTheme.Sheet,
+                    color = if (pt.confirmed) badgeColor else palette.backgroundCanvas,
                     topLeft = Offset(boxLeft, boxTop),
                     size = Size(boxW, boxH),
                     cornerRadius = CornerRadius(3f, 3f),
@@ -445,7 +442,7 @@ fun MarketChartCanvas(
                         style = Stroke(width = 1.3f, pathEffect = dashedEffect),
                     )
                 }
-                textPaint.color = (if (pt.confirmed) Color.White else badgeColor).toArgb()
+                textPaint.color = (if (pt.confirmed) palette.backgroundCanvas else badgeColor).toArgb()
                 drawContext.canvas.nativeCanvas.drawText(
                     tag,
                     boxLeft + 5f,
@@ -455,12 +452,11 @@ fun MarketChartCanvas(
             }
         }
 
-        // Bottom time axis labels
         val zone = MarketTime.zone(snapshot.instrument.currency)
         val fmt = if (snapshot.timeframe == "1d") "yyyy-MM-dd" else "MM-dd HH:mm"
         val firstDate = MarketTime.formatDate(candles[startIdx].time, fmt, zone)
         val lastDate = MarketTime.formatDate(candles[endIdx].time, fmt, zone)
-        textPaint.color = ChanTheme.TextSecondary.toArgb()
+        textPaint.color = palette.inkMuted.toArgb()
         drawContext.canvas.nativeCanvas.drawText(
             firstDate,
             padLeft.toFloat(),

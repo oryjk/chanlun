@@ -5,21 +5,35 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import cn.oryjk.changuan.application.AppUpdateUseCases
 import cn.oryjk.changuan.application.AuthUseCases
+import cn.oryjk.changuan.application.EnvironmentServices
+import cn.oryjk.changuan.application.EnvironmentServicesFactory
+import cn.oryjk.changuan.application.EnvironmentStore
+import cn.oryjk.changuan.application.InMemoryEnvironmentStore
+import cn.oryjk.changuan.application.InMemoryThemePreferenceStore
 import cn.oryjk.changuan.application.MarketUseCases
 import cn.oryjk.changuan.application.RouteStore
+import cn.oryjk.changuan.application.ThemePreferenceStore
+import cn.oryjk.changuan.domain.ApkInstallState
+import cn.oryjk.changuan.domain.AppThemeMode
 import cn.oryjk.changuan.domain.AppUpdateInfo
 import cn.oryjk.changuan.domain.AppUser
+import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.domain.ChartLayers
 import cn.oryjk.changuan.domain.DefaultStocks
+import cn.oryjk.changuan.domain.DownloadedApk
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketTime
 import cn.oryjk.changuan.domain.QuotePoint
 import cn.oryjk.changuan.domain.QuoteSeriesRules
 import cn.oryjk.changuan.domain.RankingBoard
+import cn.oryjk.changuan.domain.ReleaseHistoryItem
 import cn.oryjk.changuan.domain.RootTab
+import cn.oryjk.changuan.domain.ShizukuAvailability
+import cn.oryjk.changuan.domain.ShizukuChannelState
 import cn.oryjk.changuan.domain.SignalConfluence
 import cn.oryjk.changuan.domain.Stock
+import cn.oryjk.changuan.domain.SystemInstallResult
 import cn.oryjk.changuan.domain.Timeframe
 import cn.oryjk.changuan.domain.UpdateDownloadState
 import kotlinx.coroutines.CancellationException
@@ -49,6 +63,8 @@ data class AppUiState(
     val stock: Stock = DefaultStocks.KWEICHOW_MOUTAI,
     val timeframe: Timeframe = Timeframe.DAILY,
     val tab: RootTab = RootTab.MARKET,
+    val environment: BackendEnvironment = BackendEnvironment.DEFAULT,
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val snapshot: MarketSnapshot? = null,
     val confluence: SignalConfluence? = null,
     val quote: MarketQuote? = null,
@@ -56,9 +72,13 @@ data class AppUiState(
     val board: RankingBoard? = null,
     val user: AppUser? = null,
     val loading: Boolean = false,
+    val refreshing: Boolean = false,
     val confluenceLoading: Boolean = false,
     val boardLoading: Boolean = false,
+    val boardRefreshing: Boolean = false,
+    val showAuthDialog: Boolean = false,
     val accountBusy: Boolean = false,
+    val sendingCode: Boolean = false,
     val error: String = "",
     val boardError: String = "",
     val confluenceError: String = "",
@@ -72,18 +92,53 @@ data class AppUiState(
     val searchError: String = "",
     val pendingUpdate: AppUpdateInfo? = null,
     val updateDownloadState: UpdateDownloadState = UpdateDownloadState.Idle,
+    val shizukuState: ShizukuChannelState = ShizukuChannelState(),
+    val installState: ApkInstallState = ApkInstallState.Idle,
     val lastUpdateCheckTime: String = "尚未检测",
+    val releaseHistoryLoading: Boolean = false,
+    val releaseHistoryItems: List<ReleaseHistoryItem> = emptyList(),
+    val releaseHistoryError: String? = null,
+    val snackbarMessage: String? = null,
 )
 
 class AppViewModel(
-    val market: MarketUseCases,
-    val auth: AuthUseCases,
+    private val servicesFactory: EnvironmentServicesFactory,
+    private val environmentStore: EnvironmentStore,
+    private val themeStore: ThemePreferenceStore,
     private val routes: RouteStore,
     val updates: AppUpdateUseCases? = null,
     externalScope: CoroutineScope? = null,
 ) : ViewModel() {
+
+    constructor(
+        market: MarketUseCases,
+        auth: AuthUseCases,
+        routes: RouteStore,
+        updates: AppUpdateUseCases? = null,
+        externalScope: CoroutineScope? = null,
+    ) : this(
+        servicesFactory = EnvironmentServicesFactory { EnvironmentServices(market = market, auth = auth) },
+        environmentStore = InMemoryEnvironmentStore(BackendEnvironment.DEFAULT),
+        themeStore = InMemoryThemePreferenceStore(AppThemeMode.SYSTEM),
+        routes = routes,
+        updates = updates,
+        externalScope = externalScope,
+    )
+
     private val scope: CoroutineScope = externalScope ?: viewModelScope
-    private val _state = MutableStateFlow(AppUiState())
+    private var activeServices: EnvironmentServices = servicesFactory.create(environmentStore.environment.value)
+    val market: MarketUseCases
+        get() = activeServices.market
+    val auth: AuthUseCases
+        get() = activeServices.auth
+
+    private val _state = MutableStateFlow(
+        AppUiState(
+            environment = environmentStore.environment.value,
+            themeMode = themeStore.themeMode.value,
+            shizukuState = updates?.installer?.channelState?.value ?: ShizukuChannelState(),
+        ),
+    )
     val state: StateFlow<AppUiState> = _state.asStateFlow()
 
     private var active: Boolean = false
@@ -96,6 +151,10 @@ class AppViewModel(
     private var cooldownJob: Job? = null
     private var updateLoopJob: Job? = null
     private var updateDownloadJob: Job? = null
+    private var updateInstallJob: Job? = null
+    private var historyJob: Job? = null
+    private var downloadGeneration: Long = 0L
+    private var historyGeneration: Long = 0L
     private val dismissedVersionCodes = mutableSetOf<Int>()
 
     init {
@@ -113,6 +172,7 @@ class AppViewModel(
         if (active == isForeground) return
         active = isForeground
         if (isForeground) {
+            refreshInstallerState()
             reload()
             startPeriodicUpdateCheck()
             scope.launch { restoreSession() }
@@ -124,11 +184,71 @@ class AppViewModel(
             _state.update {
                 it.copy(
                     loading = false,
+                    refreshing = false,
                     confluenceLoading = false,
                     boardLoading = false,
+                    boardRefreshing = false,
                 )
             }
         }
+    }
+
+    fun setThemeMode(mode: AppThemeMode) {
+        themeStore.setThemeMode(mode)
+        _state.update { it.copy(themeMode = mode) }
+    }
+
+    fun selectEnvironment(environment: BackendEnvironment) {
+        if (_state.value.environment == environment) return
+        try {
+            environmentStore.select(environment)
+        } catch (error: Exception) {
+            _state.update { it.copy(snackbarMessage = error.message ?: "无法保存后端环境，请重试") }
+            return
+        }
+        generation += 1
+        authEpoch += 1
+        loadJob?.cancel()
+        boardJob?.cancel()
+        searchJob?.cancel()
+        cooldownJob?.cancel()
+        activeServices = servicesFactory.create(environment)
+        _state.update {
+            it.copy(
+                environment = environment,
+                snapshot = null,
+                confluence = null,
+                quote = null,
+                series = emptyList(),
+                board = null,
+                user = null,
+                loading = false,
+                refreshing = false,
+                confluenceLoading = false,
+                boardLoading = false,
+                boardRefreshing = false,
+                accountBusy = false,
+                sendingCode = false,
+                error = "",
+                boardError = "",
+                confluenceError = "",
+                accountError = "",
+                accountMessage = "",
+                codeCooldownSeconds = 0,
+                searchResults = emptyList(),
+                searchLoading = false,
+                searchError = "",
+                snackbarMessage = "已切换至${environment.label}",
+            )
+        }
+        if (active) {
+            reload()
+            scope.launch { restoreSession() }
+        }
+    }
+
+    fun clearSnackbar() {
+        _state.update { it.copy(snackbarMessage = null) }
     }
 
     private fun startPeriodicUpdateCheck() {
@@ -137,7 +257,7 @@ class AppViewModel(
         updateLoopJob = scope.launch {
             delay(INITIAL_UPDATE_CHECK_DELAY_MILLIS)
             while (active && isActive) {
-                performUpdateCheck(updateService, forceShowEvenIfDismissed = false)
+                performUpdateCheck(updateService, forceShowEvenIfDismissed = false, surfaceFailure = false)
                 delay(UPDATE_CHECK_INTERVAL_MILLIS)
             }
         }
@@ -146,7 +266,11 @@ class AppViewModel(
     fun checkUpdateNow(onResult: ((Boolean) -> Unit)? = null) {
         val updateService = updates ?: return
         scope.launch {
-            val found = performUpdateCheck(updateService, forceShowEvenIfDismissed = true)
+            val found = performUpdateCheck(
+                updateService = updateService,
+                forceShowEvenIfDismissed = true,
+                surfaceFailure = true,
+            )
             onResult?.invoke(found)
         }
     }
@@ -154,27 +278,42 @@ class AppViewModel(
     private suspend fun performUpdateCheck(
         updateService: AppUpdateUseCases,
         forceShowEvenIfDismissed: Boolean,
+        surfaceFailure: Boolean,
     ): Boolean {
-        val info = runCatching { updateService.reader.checkLatest() }.getOrNull()
+        val result = runCatching { updateService.reader.checkLatest() }
         val timeText = MarketTime.formatDate(Instant.now(), "HH:mm:ss")
         _state.update { it.copy(lastUpdateCheckTime = timeText) }
+        result.onFailure { err ->
+            if (err is CancellationException) throw err
+            if (surfaceFailure) {
+                _state.update { it.copy(snackbarMessage = err.message ?: "无法检查更新，请稍后重试") }
+            }
+            return false
+        }
+        val info = result.getOrNull()
         if (info != null) {
             val allowed = forceShowEvenIfDismissed || info.versionCode !in dismissedVersionCodes
             if (allowed && _state.value.updateDownloadState !is UpdateDownloadState.Downloading) {
                 _state.update { it.copy(pendingUpdate = info) }
                 return true
             }
+        } else if (surfaceFailure) {
+            _state.update { it.copy(snackbarMessage = "当前已是最新版本") }
         }
         return false
     }
 
     fun dismissUpdate() {
+        if (_state.value.installState == ApkInstallState.Installing) return
+        downloadGeneration += 1
         updateDownloadJob?.cancel()
+        updateInstallJob?.cancel()
         _state.value.pendingUpdate?.let { dismissedVersionCodes.add(it.versionCode) }
         _state.update {
             it.copy(
                 pendingUpdate = null,
                 updateDownloadState = UpdateDownloadState.Idle,
+                installState = ApkInstallState.Idle,
             )
         }
     }
@@ -182,26 +321,90 @@ class AppViewModel(
     fun startUpdateDownload(info: AppUpdateInfo) {
         val updateService = updates ?: return
         if (updateDownloadJob?.isActive == true) return
+        val gen = ++downloadGeneration
         _state.update {
-            it.copy(updateDownloadState = UpdateDownloadState.Downloading(0L, info.fileSizeBytes))
+            it.copy(
+                updateDownloadState = UpdateDownloadState.Downloading(0L, info.fileSizeBytes),
+                installState = ApkInstallState.Idle,
+            )
         }
         updateDownloadJob = scope.launch {
             try {
-                val apkPath = updateService.downloader.download(info) { downloaded, total ->
-                    _state.update {
-                        it.copy(updateDownloadState = UpdateDownloadState.Downloading(downloaded, total))
+                val apk = updateService.downloader.download(info) { downloaded, total ->
+                    if (gen == downloadGeneration) {
+                        _state.update {
+                            it.copy(updateDownloadState = UpdateDownloadState.Downloading(downloaded, total))
+                        }
                     }
                 }
-                _state.update {
-                    it.copy(updateDownloadState = UpdateDownloadState.Ready(apkPath))
+                if (gen == downloadGeneration) {
+                    _state.update {
+                        it.copy(updateDownloadState = UpdateDownloadState.Ready(apk))
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
+                if (gen == downloadGeneration) {
+                    _state.update {
+                        it.copy(
+                            updateDownloadState = UpdateDownloadState.Failed(
+                                error.message ?: "下载更新包失败",
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshInstallerState() {
+        val installer = updates?.installer ?: return
+        installer.refreshShizukuState()
+        _state.update { it.copy(shizukuState = installer.channelState.value) }
+    }
+
+    fun setShizukuEnabled(enabled: Boolean) {
+        val installer = updates?.installer ?: return
+        installer.setShizukuEnabled(enabled)
+        _state.update { it.copy(shizukuState = installer.channelState.value) }
+    }
+
+    fun requestShizukuPermission() {
+        val installer = updates?.installer ?: return
+        installer.refreshShizukuState()
+        if (installer.channelState.value.availability == ShizukuAvailability.NeedsAuthorization) {
+            installer.requestShizukuPermission()
+        }
+        _state.update { it.copy(shizukuState = installer.channelState.value) }
+    }
+
+    fun openShizuku() {
+        updates?.installer?.openShizuku()
+    }
+
+    fun installDownloadedUpdate(apk: DownloadedApk, info: AppUpdateInfo) {
+        val installer = updates?.installer ?: return
+        val currentInstall = _state.value.installState
+        if (currentInstall == ApkInstallState.Installing || currentInstall == ApkInstallState.Submitted) return
+        refreshInstallerState()
+        if (!installer.channelState.value.useShizuku) {
+            installWithSystem(apk)
+            return
+        }
+        _state.update { it.copy(installState = ApkInstallState.Installing) }
+        updateInstallJob = scope.launch {
+            try {
+                installer.installShizuku(apk, info)
+                _state.update { it.copy(installState = ApkInstallState.Submitted) }
+            } catch (cancelled: CancellationException) {
+                _state.update { it.copy(installState = ApkInstallState.Idle) }
+                throw cancelled
+            } catch (error: Exception) {
                 _state.update {
                     it.copy(
-                        updateDownloadState = UpdateDownloadState.Failed(
-                            error.message ?: "下载更新包失败",
+                        installState = ApkInstallState.Failed(
+                            error.message ?: "Shizuku 安装失败，可改用系统安装",
                         ),
                     )
                 }
@@ -209,15 +412,59 @@ class AppViewModel(
         }
     }
 
-    fun canInstallPackages(): Boolean =
-        updates?.installer?.canInstallPackages() ?: false
-
-    fun openInstallPermissionSettings() {
-        updates?.installer?.openInstallPermissionSettings()
+    fun installWithSystem(apk: DownloadedApk) {
+        val installer = updates?.installer ?: return
+        val currentInstall = _state.value.installState
+        if (currentInstall == ApkInstallState.Installing || currentInstall == ApkInstallState.Submitted) return
+        try {
+            val result = installer.installWithSystem(apk)
+            _state.update {
+                it.copy(
+                    installState = when (result) {
+                        SystemInstallResult.Opened -> ApkInstallState.Idle
+                        SystemInstallResult.PermissionRequired -> ApkInstallState.NeedsSystemPermission
+                    },
+                )
+            }
+        } catch (error: Exception) {
+            _state.update {
+                it.copy(installState = ApkInstallState.Failed(error.message ?: "无法打开系统安装器"))
+            }
+        }
     }
 
-    fun installDownloadedUpdate(apkPath: String) {
-        updates?.installer?.installApk(apkPath)
+    fun loadReleaseHistory(force: Boolean = false) {
+        val reader = updates?.reader ?: return
+        val current = _state.value
+        if (!force && (current.releaseHistoryLoading || current.releaseHistoryItems.isNotEmpty())) return
+        historyJob?.cancel()
+        val gen = ++historyGeneration
+        _state.update { it.copy(releaseHistoryLoading = true, releaseHistoryError = null) }
+        historyJob = scope.launch {
+            try {
+                val items = reader.fetchReleaseHistory()
+                if (gen == historyGeneration) {
+                    _state.update {
+                        it.copy(
+                            releaseHistoryLoading = false,
+                            releaseHistoryItems = items,
+                            releaseHistoryError = null,
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (gen == historyGeneration) {
+                    _state.update {
+                        it.copy(
+                            releaseHistoryLoading = false,
+                            releaseHistoryError = error.message ?: "无法加载历史版本记录",
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun changeTab(nextTab: RootTab) {
@@ -275,24 +522,28 @@ class AppViewModel(
         _state.update {
             it.copy(
                 loading = false,
+                refreshing = false,
                 confluenceLoading = false,
                 boardLoading = false,
+                boardRefreshing = false,
             )
         }
         if (!active) return
         val currentState = _state.value
         if (currentState.tab == RootTab.RANKING) {
-            startRankings(currentGen)
+            startRankings(currentGen, showPullIndicator = refresh)
             return
         }
         if (currentState.tab != RootTab.MARKET) return
         val stock = currentState.stock
         val period = currentState.timeframe
+        val hasContent = currentState.snapshot != null || currentState.quote != null
         _state.update {
             it.copy(
                 error = "",
                 confluenceError = "",
-                loading = it.snapshot == null && it.quote == null,
+                loading = !hasContent,
+                refreshing = refresh && hasContent,
             )
         }
         if (period == Timeframe.REALTIME) {
@@ -314,12 +565,20 @@ class AppViewModel(
                 }
                 if (!accept(currentGen)) return@launch
                 snapResult.onSuccess { snapshot ->
-                    _state.update { it.copy(snapshot = snapshot, loading = false, error = "") }
+                    _state.update {
+                        it.copy(
+                            snapshot = snapshot,
+                            loading = false,
+                            refreshing = false,
+                            error = "",
+                        )
+                    }
                 }.onFailure { err ->
                     if (err !is CancellationException) {
                         _state.update {
                             it.copy(
                                 loading = false,
+                                refreshing = false,
                                 error = err.message ?: "读取行情失败，请稍后重试",
                             )
                         }
@@ -393,6 +652,7 @@ class AppViewModel(
                             quote = latestQuote,
                             series = merged,
                             loading = false,
+                            refreshing = false,
                             error = "",
                         )
                     }
@@ -404,11 +664,14 @@ class AppViewModel(
                         _state.update {
                             it.copy(
                                 loading = false,
+                                refreshing = false,
                                 error = err.message ?: "读取实时报价失败",
                             )
                         }
                     }
                 }
+            } else {
+                _state.update { it.copy(loading = false, refreshing = false) }
             }
             val sleepSeconds = if (failures > 0) {
                 min(30.0, 3.0 * 2.0.pow(failures.toDouble())).toLong()
@@ -419,8 +682,15 @@ class AppViewModel(
         }
     }
 
-    private fun startRankings(currentGen: Int) {
-        _state.update { it.copy(boardLoading = it.board == null, boardError = "") }
+    private fun startRankings(currentGen: Int, showPullIndicator: Boolean = false) {
+        val hasBoard = _state.value.board != null
+        _state.update {
+            it.copy(
+                boardLoading = !hasBoard,
+                boardRefreshing = showPullIndicator && hasBoard,
+                boardError = "",
+            )
+        }
         boardJob = scope.launch {
             while (accept(currentGen)) {
                 runCatching { market.reader.rankings() }
@@ -430,6 +700,7 @@ class AppViewModel(
                                 it.copy(
                                     board = board,
                                     boardLoading = false,
+                                    boardRefreshing = false,
                                     boardError = "",
                                 )
                             }
@@ -440,6 +711,7 @@ class AppViewModel(
                             _state.update {
                                 it.copy(
                                     boardLoading = false,
+                                    boardRefreshing = false,
                                     boardError = err.message ?: "读取收盘榜单失败",
                                 )
                             }
@@ -489,6 +761,28 @@ class AppViewModel(
         }
     }
 
+    fun openAuthDialog(mode: AuthMode = AuthMode.LOGIN) {
+        _state.update {
+            it.copy(
+                showAuthDialog = true,
+                authMode = mode,
+                accountError = "",
+                accountMessage = "",
+            )
+        }
+    }
+
+    fun closeAuthDialog() {
+        if (_state.value.accountBusy) return
+        _state.update {
+            it.copy(
+                showAuthDialog = false,
+                accountError = "",
+                accountMessage = "",
+            )
+        }
+    }
+
     fun switchAuthMode(mode: AuthMode) {
         _state.update {
             it.copy(
@@ -519,8 +813,8 @@ class AppViewModel(
     }
 
     suspend fun sendEmailCode(email: String) {
-        if (_state.value.accountBusy || _state.value.codeCooldownSeconds > 0) return
-        _state.update { it.copy(accountBusy = true, accountError = "", accountMessage = "") }
+        if (_state.value.sendingCode || _state.value.accountBusy || _state.value.codeCooldownSeconds > 0) return
+        _state.update { it.copy(sendingCode = true, accountError = "", accountMessage = "") }
         try {
             val sent = auth.sendEmailCode(email)
             _state.update {
@@ -535,7 +829,7 @@ class AppViewModel(
                 _state.update { it.copy(accountError = err.message ?: "发送验证码失败，请稍后重试") }
             }
         } finally {
-            _state.update { it.copy(accountBusy = false) }
+            _state.update { it.copy(sendingCode = false) }
         }
     }
 
@@ -572,8 +866,10 @@ class AppViewModel(
                 _state.update {
                     it.copy(
                         user = result.user,
+                        showAuthDialog = false,
                         accountError = "",
                         accountMessage = "",
+                        snackbarMessage = "注册成功，欢迎来到缠观",
                     )
                 }
             }
@@ -597,8 +893,10 @@ class AppViewModel(
                 _state.update {
                     it.copy(
                         user = result.user,
+                        showAuthDialog = false,
                         accountError = "",
                         accountMessage = "",
+                        snackbarMessage = "欢迎回来，${result.user.nickname}",
                     )
                 }
             }
@@ -616,6 +914,7 @@ class AppViewModel(
         _state.update { it.copy(accountBusy = true, accountError = "", accountMessage = "") }
         try {
             auth.logout()
+            _state.update { it.copy(snackbarMessage = "已退出当前账号") }
         } catch (_: Exception) {
             _state.update {
                 it.copy(accountError = "本机已退出，服务端退出未完成，请联网后重新登录或等待会话到期")
@@ -634,6 +933,7 @@ class AppViewModel(
                 it.copy(
                     user = null,
                     accountMessage = "账号与登录信息已删除，您仍可作为游客查看行情",
+                    snackbarMessage = "账号已删除",
                 )
             }
         } catch (err: Exception) {
@@ -653,17 +953,24 @@ class AppViewModel(
         _state.update { it.copy(user = null) }
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        updates?.installer?.close()
+    }
+
     class Factory(
-        private val market: MarketUseCases,
-        private val auth: AuthUseCases,
+        private val servicesFactory: EnvironmentServicesFactory,
+        private val environmentStore: EnvironmentStore,
+        private val themeStore: ThemePreferenceStore,
         private val routes: RouteStore,
         private val updates: AppUpdateUseCases? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             AppViewModel(
-                market = market,
-                auth = auth,
+                servicesFactory = servicesFactory,
+                environmentStore = environmentStore,
+                themeStore = themeStore,
                 routes = routes,
                 updates = updates,
             ) as T

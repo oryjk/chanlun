@@ -9,9 +9,11 @@ from ..interfaces.api.app_auth_routes import router as app_auth_router
 from ..interfaces.api.error_handlers import register_error_handlers
 from ..interfaces.api.routes import router
 from .container import build_application
+from .env import load_dotenv_if_present
 from .settings import load_settings
 from .app_auth import build_native_auth
 
+load_dotenv_if_present()
 settings = load_settings()
 services = build_application(settings)
 

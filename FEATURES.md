@@ -32,4 +32,5 @@
 - 在 Mac 按 `ios/README.md` 设置团队、Bundle ID 与 HTTPS API，完成原生编译、双端交互与真实 Apple 登录验证后进入 TestFlight。
 - 按逐日可知数据回放验证量价辅助条件，分别报告失效率、信号覆盖、确认延迟与扣费结果；验证前不启用量能硬过滤。
 - 在 Mac 微信开发者工具重新进入缠观，若仍启动失败则读取页面上的诊断信息。
-- 公网 match.oryjk.cn/chanlun/ 仍待部署对应 H5 与 API 路由。
+- 游客及登录后全部行情/四周期结构/多级别联立/分时/榜单功能已在原生 Android 客户端落地，采用澄境（Clarity）浅色/深色双主题视觉体系、「行情 / 榜单 / 菜单」适配手机底栏与平板侧栏、飞书 SMTP 邮箱验证码注册与密码登录、三环境 API 切换器（默认 `https://ai.oryjk.cn:82/chanlun-dev/`）以及外网/内网双通道 30 秒自动检测更新（SHA-256/签名校验、Shizuku 与系统安装）。
+- 公网 `https://ai.oryjk.cn:82/chanlun-dev/` 与 `https://ai.oryjk.cn:82/chanlun-android/` 已通过 `out109` 反向代理与本机网关打通；公网 `match.oryjk.cn/chanlun/` 仍待独立生产发布。

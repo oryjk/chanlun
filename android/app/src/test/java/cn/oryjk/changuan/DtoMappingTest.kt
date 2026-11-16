@@ -1,6 +1,6 @@
 package cn.oryjk.changuan
 
-import cn.oryjk.changuan.infrastructure.AppUpdateGateway
+import cn.oryjk.changuan.infrastructure.update.AppUpdateChecker
 import cn.oryjk.changuan.infrastructure.AuthGateway
 import cn.oryjk.changuan.infrastructure.MarketGateway
 import com.google.gson.JsonParser
@@ -94,20 +94,20 @@ class DtoMappingTest {
         """.trimIndent()
 
         assertNull(
-            AppUpdateGateway.parseAndCompareMetadata(
+            AppUpdateChecker.parseAndCompareMetadata(
                 json = metadataJson,
                 currentVersionCode = 2,
             ),
         )
 
-        val update = AppUpdateGateway.parseAndCompareMetadata(
+        val update = AppUpdateChecker.parseAndCompareMetadata(
             json = metadataJson,
             currentVersionCode = 1,
         )
         assertEquals("1.0.1", update?.versionName)
         assertEquals(2, update?.versionCode)
         assertEquals(
-            "http://172.16.60.233/chanlun-android/releases/changuan-v1.0.1-20261112.apk",
+            "https://ai.oryjk.cn:82/chanlun-android/releases/changuan-v1.0.1-20261112.apk",
             update?.apkUrl,
         )
         assertEquals("abcdef0123456789", update?.sha256)

@@ -1,41 +1,78 @@
 package cn.oryjk.changuan.app
 
 import android.content.Context
-import cn.oryjk.changuan.BuildConfig
 import cn.oryjk.changuan.application.AppUpdateUseCases
 import cn.oryjk.changuan.application.AuthUseCases
+import cn.oryjk.changuan.application.EnvironmentServices
+import cn.oryjk.changuan.application.EnvironmentServicesFactory
+import cn.oryjk.changuan.application.EnvironmentStore
 import cn.oryjk.changuan.application.MarketUseCases
 import cn.oryjk.changuan.application.RouteStore
-import cn.oryjk.changuan.application.SessionStore
+import cn.oryjk.changuan.application.ThemePreferenceStore
+import cn.oryjk.changuan.domain.BackendEnvironment
 import cn.oryjk.changuan.infrastructure.ApiClient
-import cn.oryjk.changuan.infrastructure.AppUpdateGateway
 import cn.oryjk.changuan.infrastructure.AuthGateway
+import cn.oryjk.changuan.infrastructure.HttpTransport
 import cn.oryjk.changuan.infrastructure.MarketGateway
+import cn.oryjk.changuan.infrastructure.OkHttpTransport
+import cn.oryjk.changuan.infrastructure.SharedPreferencesEnvironmentStore
 import cn.oryjk.changuan.infrastructure.SharedPreferencesRouteStore
 import cn.oryjk.changuan.infrastructure.SharedPreferencesSessionStore
+import cn.oryjk.changuan.infrastructure.SharedPreferencesThemeStore
+import cn.oryjk.changuan.infrastructure.update.AndroidUpdateGateway
 import cn.oryjk.changuan.presentation.AppViewModel
+import okhttp3.OkHttpClient
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 class AppContainer(context: Context) {
     private val appContext: Context = context.applicationContext
-    val sessionStore: SessionStore = SharedPreferencesSessionStore(appContext)
     val routeStore: RouteStore = SharedPreferencesRouteStore(appContext)
-    private val apiClient = ApiClient(
-        baseUrl = BuildConfig.API_BASE_URL,
-        store = sessionStore,
-    )
-    private val marketGateway = MarketGateway(apiClient)
-    private val authGateway = AuthGateway(apiClient)
-    private val updateGateway = AppUpdateGateway(context = appContext)
+    val environmentStore: EnvironmentStore = SharedPreferencesEnvironmentStore(appContext)
+    val themeStore: ThemePreferenceStore = SharedPreferencesThemeStore(appContext)
 
-    val marketUseCases = MarketUseCases(
-        reader = marketGateway,
-        writer = marketGateway,
+    private val sharedHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .build()
+
+    private val transport: HttpTransport = OkHttpTransport(sharedHttpClient)
+    private val updateGateway = AndroidUpdateGateway(
+        context = appContext,
+        checkerClient = sharedHttpClient.newBuilder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(10, TimeUnit.SECONDS)
+            .build(),
+        downloaderClient = sharedHttpClient.newBuilder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build(),
     )
-    val authUseCases = AuthUseCases(
-        reader = authGateway,
-        commands = authGateway,
-        store = sessionStore,
-    )
+
+    private val servicesByEnv = ConcurrentHashMap<BackendEnvironment, EnvironmentServices>()
+
+    val servicesFactory = EnvironmentServicesFactory { environment ->
+        servicesByEnv.getOrPut(environment) {
+            val sessionStore = SharedPreferencesSessionStore(
+                context = appContext,
+                prefsName = SharedPreferencesSessionStore.prefsNameFor(environment),
+            )
+            val apiClient = ApiClient(
+                baseUrl = environment.baseUrl,
+                store = sessionStore,
+                transport = transport,
+            )
+            val marketGateway = MarketGateway(apiClient)
+            val authGateway = AuthGateway(apiClient)
+            EnvironmentServices(
+                market = MarketUseCases(reader = marketGateway, writer = marketGateway),
+                auth = AuthUseCases(reader = authGateway, commands = authGateway, store = sessionStore),
+            )
+        }
+    }
+
     val updateUseCases = AppUpdateUseCases(
         reader = updateGateway,
         downloader = updateGateway,
@@ -43,8 +80,9 @@ class AppContainer(context: Context) {
     )
 
     val viewModelFactory = AppViewModel.Factory(
-        market = marketUseCases,
-        auth = authUseCases,
+        servicesFactory = servicesFactory,
+        environmentStore = environmentStore,
+        themeStore = themeStore,
         routes = routeStore,
         updates = updateUseCases,
     )

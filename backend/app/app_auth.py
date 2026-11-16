@@ -63,17 +63,43 @@ def _build_apple_gateway() -> tuple[AppleIdentityGateway, str] | tuple[None, Non
     return apple, values['CHANLUN_APPLE_TOKEN_ENCRYPTION_KEY']
 
 
+def _first_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, '').strip()
+        if value:
+            return value
+    return ''
+
+
 def _build_email_gateway() -> SmtpEmailGateway | None:
-    smtp_host = os.getenv('CHANLUN_SMTP_HOST', '').strip()
+    if os.getenv('CHANLUN_EMAIL_AUTH_ENABLED', '').strip().lower() == 'false':
+        return None
+    smtp_host = _first_env('CHANLUN_SMTP_HOST', 'SMTP_HOST')
     if not smtp_host:
         return None
-    smtp_port = int(os.getenv('CHANLUN_SMTP_PORT', '465').strip() or '465')
-    username = os.getenv('CHANLUN_SMTP_USERNAME', '').strip()
-    password = os.getenv('CHANLUN_SMTP_PASSWORD', '').strip()
-    sender = os.getenv('CHANLUN_SMTP_FROM', '').strip() or username
-    tls_mode = os.getenv('CHANLUN_SMTP_TLS_MODE', 'tls').strip().lower() or 'tls'
+    tls_mode = (
+        _first_env('CHANLUN_SMTP_TLS_MODE', 'SMTP_TLS_MODE').lower()
+        or 'tls'
+    )
+    default_port = '587' if tls_mode in ('starttls', 'start_tls') else '465'
+    smtp_port = int(_first_env('CHANLUN_SMTP_PORT', 'SMTP_PORT') or default_port)
+    username = _first_env('CHANLUN_SMTP_USERNAME', 'SMTP_USERNAME')
+    password = os.getenv('CHANLUN_SMTP_PASSWORD') or os.getenv('SMTP_PASSWORD') or ''
+    sender = _first_env(
+        'CHANLUN_SMTP_FROM',
+        'CHANLUN_SMTP_FROM_EMAIL',
+        'SMTP_FROM_EMAIL',
+    ) or username
     if not sender:
-        raise ValueError('SMTP 配置需提供发件人邮箱 CHANLUN_SMTP_FROM 或 CHANLUN_SMTP_USERNAME')
+        raise ValueError(
+            'SMTP 配置需提供发件人邮箱 CHANLUN_SMTP_FROM / SMTP_FROM_EMAIL 或用户名'
+        )
+    explicit_from_name = os.getenv('CHANLUN_SMTP_FROM_NAME', '').strip()
+    fallback_from_name = os.getenv('SMTP_FROM_NAME', '').strip()
+    from_name = (
+        explicit_from_name
+        or (fallback_from_name if fallback_from_name and fallback_from_name != '策略家' else '缠观')
+    )
     return SmtpEmailGateway(
         host=smtp_host,
         port=smtp_port,
@@ -81,13 +107,15 @@ def _build_email_gateway() -> SmtpEmailGateway | None:
         password=password,
         sender=sender,
         tls_mode=tls_mode,
+        from_name=from_name,
     )
 
 
 def build_native_auth():
     apple, apple_secret = _build_apple_gateway()
     email_gateway = _build_email_gateway()
-    email_enabled = os.getenv('CHANLUN_EMAIL_AUTH_ENABLED', 'false').lower() == 'true' or email_gateway is not None
+    email_flag = os.getenv('CHANLUN_EMAIL_AUTH_ENABLED', '').strip().lower()
+    email_enabled = (email_flag != 'false') and (email_flag == 'true' or email_gateway is not None)
     if apple is None and not email_enabled:
         return NativeAuthServices()
     encryption_key = (
@@ -104,9 +132,17 @@ def build_native_auth():
         os.getenv('CHANLUN_APP_AUTH_STORE_PATH', 'var/accounts/accounts.sqlite3'),
         encryption_key,
     )
+    code_pepper = _first_env('CHANLUN_EMAIL_CODE_PEPPER', 'EMAIL_CODE_PEPPER')
     now = lambda: datetime.now(timezone.utc)
     return NativeAuthServices(
-        AppAuthService(store, store, apple, now, email_gateway=email_gateway),
+        AppAuthService(
+            store,
+            store,
+            apple,
+            now,
+            email_gateway=email_gateway,
+            code_pepper=code_pepper,
+        ),
         GetAppSession(store, now),
         apple,
     )
