@@ -113,6 +113,7 @@ fun RootScreen(
                             viewModel.loadReleaseHistory(force = true)
                             showReleaseHistory = true
                         },
+                        onOpenGlossary = { showGlossary = true },
                         modifier = innerModifier,
                     )
                 }

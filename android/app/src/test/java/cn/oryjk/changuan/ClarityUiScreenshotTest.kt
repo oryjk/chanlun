@@ -581,12 +581,64 @@ class ClarityUiScreenshotTest {
                     onOpenInstallerSettings = {},
                     onCheckUpdate = {},
                     onOpenReleaseHistory = {},
+                    onOpenGlossary = {},
                     modifier = m,
                     applyStatusBarPadding = false,
                 )
             }
         }
         captureAllWindows("menu_light.png")
+    }
+
+    @Test
+    fun renderMenuGuestLight() {
+        val state = sampleState(dark = false).copy(
+            tab = RootTab.ACCOUNT,
+            user = null,
+        )
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = false, tab = RootTab.ACCOUNT) { m ->
+                AccountScreen(
+                    state = state,
+                    onOpenAuth = {},
+                    onLogout = {},
+                    onDeleteAccount = {},
+                    onSelectThemeMode = {},
+                    onOpenEnvironmentDialog = {},
+                    onOpenInstallerSettings = {},
+                    onCheckUpdate = {},
+                    onOpenReleaseHistory = {},
+                    onOpenGlossary = {},
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+        }
+        captureAllWindows("menu_guest_light.png")
+    }
+
+    @Test
+    fun renderMenuDark() {
+        val state = sampleState(dark = true).copy(tab = RootTab.ACCOUNT)
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = true, tab = RootTab.ACCOUNT) { m ->
+                AccountScreen(
+                    state = state,
+                    onOpenAuth = {},
+                    onLogout = {},
+                    onDeleteAccount = {},
+                    onSelectThemeMode = {},
+                    onOpenEnvironmentDialog = {},
+                    onOpenInstallerSettings = {},
+                    onCheckUpdate = {},
+                    onOpenReleaseHistory = {},
+                    onOpenGlossary = {},
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+        }
+        captureAllWindows("menu_dark.png")
     }
 
     @Test
