@@ -1,10 +1,11 @@
 import json
+import os
 import socket
 from http.client import RemoteDisconnected
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 from ...domain.errors import MarketDataNotFound, MarketDataUnavailable
 
@@ -14,6 +15,15 @@ _DEFAULT_USER_AGENT = (
 
 
 class JsonHttpClient:
+    def __init__(self, *, use_env_proxy: bool | None = None):
+        resolved_proxy = (
+            os.getenv("CHANLUN_HTTP_USE_ENV_PROXY", "false").lower() == "true"
+            if use_env_proxy is None
+            else use_env_proxy
+        )
+        # 国内行情源默认直连，避免宿主环境变量里的代理干扰造成间歇性 502 / 断连
+        self._opener = build_opener() if resolved_proxy else build_opener(ProxyHandler({}))
+
     def get(self, url: str, params: dict[str, Any]) -> dict:
         try:
             return json.loads(self.get_text(url, params))
@@ -37,7 +47,7 @@ class JsonHttpClient:
             merged_headers.update(headers)
         request = Request(full_url, headers=merged_headers)
         try:
-            with urlopen(request, timeout=15) as response:
+            with self._opener.open(request, timeout=15) as response:
                 charset = encoding or response.headers.get_content_charset() or "utf-8"
                 return response.read().decode(charset, errors="replace")
         except HTTPError as error:

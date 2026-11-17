@@ -38,10 +38,13 @@ from backend.domain.tracking import (
     AssetCategory,
     AssetSortField,
     MarketAssetItem,
+    MarketAssetList,
     SIMULATED_PRINCIPAL,
     TrackedAssetRecord,
     build_tracked_asset_summary,
 )
+from backend.infrastructure.cache.asset_catalog_cache import SqliteAssetCatalogCache
+from backend.infrastructure.market.asset_catalog import MarketAssetCatalogAdapter
 from backend.infrastructure.market.fallback_market_data import FallbackQuoteReader
 from backend.infrastructure.market.sina_quote import SinaQuoteReader
 from backend.infrastructure.persistence.sqlite_app_auth import SqliteAppAuthStore
@@ -61,10 +64,18 @@ class _FixedClock:
 
 
 class _FakeHttpClient:
-    def __init__(self, responses: dict[str, str]):
-        self._responses = responses
+    def __init__(self, responses: dict[str, str] | None = None, *, handler=None):
+        self._responses = responses or {}
+        self._handler = handler
+
+    def get(self, url: str, params=None) -> dict:
+        return json.loads(self.get_text(url, params))
 
     def get_text(self, url: str, params=None, *, headers=None, encoding=None) -> str:
+        if self._handler is not None:
+            result = self._handler(url, params or {})
+            if result is not None:
+                return result
         for key, value in self._responses.items():
             if key in url:
                 return value
@@ -98,14 +109,19 @@ class _StubPrimaryQuoteReader:
 
 
 class _StubCatalogReader:
-    def __init__(self, items=(), error=None):
+    def __init__(self, items=(), error=None, as_of_date: str | None = None):
         self._items = tuple(items)
         self._error = error
+        self._as_of_date = as_of_date
 
     def list_assets(self, category, *, sort_field, descending, limit):
         if self._error:
             raise self._error
-        return self._items[:limit]
+        return MarketAssetList(
+            category=category,
+            as_of_date=self._as_of_date,
+            items=self._items[:limit],
+        )
 
 
 class _StubRankingReader:
@@ -244,6 +260,288 @@ class TrackingDomainAndAdaptersTests(unittest.TestCase):
         )
         etf_result = fallback_query.execute("etf", "change_percent", "desc", 20)
         self.assertEqual([item.stock.secid for item in etf_result.items], ["159915.SZ"])
+
+    def test_catalog_adapter_queries_sh_and_sz_nodes_and_filters_zero_amount_on_ascending(self):
+        calls: list[tuple[str, int, int]] = []
+
+        def _handler(url: str, params: dict) -> str | None:
+            if "hq.sinajs.cn/list=" in url:
+                return (
+                    'var hq_str_sh000001="上证指数,3600.0,3602.5,3610.0,3615.0,3595.0,0,0,120000000,150000000000.0,'
+                    + ",".join(["0"] * 20)
+                    + ',2026-11-17,09:35:00,00";\n'
+                )
+            if "Market_Center.getHQNodeData" in url:
+                node = params["node"]
+                page = int(params["page"])
+                asc = int(params["asc"])
+                calls.append((node, page, asc))
+                if node == "sh_a" and page == 1:
+                    halted_sh = [
+                        {
+                            "symbol": f"sh688{100 + idx}",
+                            "name": f"*ST零成{idx}",
+                            "trade": "0.00",
+                            "settlement": "1.00",
+                            "pricechange": "0",
+                            "changepercent": "0",
+                            "volume": 0,
+                            "amount": 0,
+                        }
+                        for idx in range(98)
+                    ]
+                    return json.dumps(
+                        [
+                            {"symbol": "bj920001", "name": "北交测试", "trade": "5.00", "settlement": "5.00", "pricechange": "0", "changepercent": "0", "volume": 1000, "amount": 5000},
+                            *halted_sh,
+                            {"symbol": "sh600365", "name": "ST通葡", "trade": "2.46", "settlement": "2.45", "pricechange": "0.01", "changepercent": "0.41", "volume": 1030000, "amount": 2531000},
+                        ],
+                        ensure_ascii=False,
+                    )
+                if node == "sh_a" and page == 2:
+                    return json.dumps(
+                        [
+                            {"symbol": "sh600519", "name": "贵州茅台", "trade": "1453.90", "settlement": "1435.26", "pricechange": "18.64", "changepercent": "1.30", "volume": 3996700, "amount": 5767305714},
+                        ],
+                        ensure_ascii=False,
+                    )
+                if node == "sz_a" and page == 1:
+                    return json.dumps(
+                        [
+                            {"symbol": "sz002717", "name": "*ST岭南", "trade": "0.00", "settlement": "0.45", "pricechange": "0", "changepercent": "0", "volume": 0, "amount": 0},
+                            {"symbol": "sz000001", "name": "平安银行", "trade": "12.30", "settlement": "12.20", "pricechange": "0.10", "changepercent": "0.82", "volume": 2500000, "amount": 30750000},
+                        ],
+                        ensure_ascii=False,
+                    )
+                return "[]"
+            if "push2his.eastmoney.com" in url:
+                if params.get("fields2") == "f51,f53":
+                    return json.dumps(
+                        {
+                            "data": {
+                                "klines": [
+                                    "2026-11-16,10.20",
+                                    "2026-11-17,10.50",
+                                ]
+                            }
+                        }
+                    )
+                return json.dumps(
+                    {
+                        "data": {
+                            "klines": [
+                                "2026-11-16,10.00,10.20,10.30,9.90,1000,1000000,4.00,2.00,0.20",
+                                "2026-11-17,10.20,10.50,10.60,10.10,1200,1200000,4.90,2.94,0.30",
+                            ]
+                        }
+                    }
+                )
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SqliteAssetCatalogCache(Path(tmp) / "catalog.sqlite3")
+            adapter = MarketAssetCatalogAdapter(_FakeHttpClient(handler=_handler), cache_store=cache, ttl_seconds=0)
+            old_board = RankingBoard(
+                generated_at=datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc),
+                timeframe=TimeFrame.ONE_DAY,
+                bullish=(),
+                bearish=(),
+                trade_date=date(2026, 11, 11),
+            )
+            query = GetMarketAssetsQuery(
+                adapter,
+                _StubRankingReader(RankingView(old_board, RankingProgress("ready", date(2026, 11, 11)))),
+                _FixedClock(datetime(2026, 11, 17, 1, 35, tzinfo=timezone.utc)),
+            )
+            result = query.execute("stock", "amount", "asc", 3)
+
+            self.assertEqual(result.as_of_date, "2026-11-17")
+            self.assertEqual([item.stock.secid for item in result.items], ["600365.SH", "000001.SZ", "600519.SH"])
+            self.assertTrue(all(item.amount > 0 for item in result.items))
+            self.assertTrue(all(len(item.sparkline) >= 2 for item in result.items))
+            self.assertTrue(any(node == "sh_a" and page == 2 for node, page, _ in calls))
+            self.assertFalse(any(node == "hs_a" for node, _, _ in calls))
+
+    def test_catalog_adapter_serves_sqlite_cache_during_preopen_reset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SqliteAssetCatalogCache(Path(tmp) / "catalog.sqlite3")
+            cache.save_items(
+                AssetCategory.STOCK,
+                "2026-11-16",
+                (
+                    MarketAssetItem(
+                        Stock("600519.SH", "600519", "贵州茅台", "沪A"),
+                        1453.90, 18.64, 1.30, 1426.30, 1454.93, 1425.00, 1435.26, 3996700, 5767305714.0,
+                        sparkline=(1435.26, 1453.90),
+                    ),
+                    MarketAssetItem(
+                        Stock("000001.SZ", "000001", "平安银行", "深A"),
+                        12.30, -0.12, -0.97, 12.40, 12.45, 12.25, 12.42, 25000000, 307500000.0,
+                        sparkline=(12.42, 12.30),
+                    ),
+                ),
+            )
+
+            def _preopen_handler(url: str, params: dict) -> str | None:
+                if "hq.sinajs.cn/list=" in url:
+                    return (
+                        'var hq_str_sh000001="上证指数,0.0000,3602.5698,3602.5186,0.0000,0.0000,0,0,0,0,'
+                        + ",".join(["0"] * 20)
+                        + ',2026-11-17,09:15:30,00";\n'
+                    )
+                if "Market_Center.getHQNodeData" in url:
+                    return json.dumps([
+                        {"symbol": "sh600519", "name": "贵州茅台", "trade": "0.000", "settlement": "1453.900", "pricechange": "0.000", "changepercent": "0.000", "volume": 0, "amount": 0}
+                    ], ensure_ascii=False)
+                return None
+
+            adapter = MarketAssetCatalogAdapter(_FakeHttpClient(handler=_preopen_handler), cache_store=cache, ttl_seconds=0)
+            desc = adapter.list_assets(AssetCategory.STOCK, sort_field=AssetSortField.AMOUNT, descending=True, limit=2)
+            asc = adapter.list_assets(AssetCategory.STOCK, sort_field=AssetSortField.AMOUNT, descending=False, limit=2)
+            self.assertEqual(desc.as_of_date, "2026-11-16")
+            self.assertEqual([item.stock.secid for item in desc.items], ["600519.SH", "000001.SZ"])
+            self.assertEqual([item.stock.secid for item in asc.items], ["000001.SZ", "600519.SH"])
+            self.assertTrue(all(item.amount > 0 for item in asc.items))
+
+    def test_catalog_adapter_cold_start_hydrates_from_push2his_klines_during_preopen(self):
+        def _cold_start_preopen_handler(url: str, params: dict) -> str | None:
+            if "hq.sinajs.cn/list=" in url:
+                return (
+                    'var hq_str_sh000001="上证指数,0.0000,3602.5698,3602.5186,0.0000,0.0000,0,0,0,0,'
+                    + ",".join(["0"] * 20)
+                    + ',2026-11-17,09:16:00,00";\n'
+                )
+            if "Market_Center.getHQNodeData" in url:
+                node = params["node"]
+                if node == "sh_a" and params.get("sort") == "mktcap":
+                    return json.dumps([
+                        {"symbol": "sh600519", "name": "贵州茅台", "trade": "0.000", "settlement": "1453.90", "volume": 0, "amount": 0}
+                    ], ensure_ascii=False)
+                if node == "sz_a" and params.get("sort") == "mktcap":
+                    return json.dumps([
+                        {"symbol": "sz300750", "name": "宁德时代", "trade": "0.000", "settlement": "264.80", "volume": 0, "amount": 0}
+                    ], ensure_ascii=False)
+                return "[]"
+            if "push2his.eastmoney.com" in url:
+                secid = params["secid"]
+                if secid == "1.600519":
+                    return json.dumps({
+                        "data": {
+                            "klines": [
+                                "2026-11-13,1404.00,1435.26,1437.69,1394.00,41780,5954834070.00,3.10,1.77,24.99",
+                                "2026-11-16,1426.30,1453.90,1454.93,1425.00,39967,5767305714.00,2.09,1.30,18.64",
+                            ]
+                        }
+                    })
+                if secid == "0.300750":
+                    return json.dumps({
+                        "data": {
+                            "klines": [
+                                "2026-11-13,255.00,258.60,260.00,254.00,150000,3870000000.00,2.30,1.40,3.57",
+                                "2026-11-16,259.00,264.80,266.00,257.80,185000,4890000000.00,3.17,2.40,6.20",
+                            ]
+                        }
+                    })
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SqliteAssetCatalogCache(Path(tmp) / "catalog.sqlite3")
+            adapter = MarketAssetCatalogAdapter(_FakeHttpClient(handler=_cold_start_preopen_handler), cache_store=cache, ttl_seconds=0)
+            result = adapter.list_assets(AssetCategory.STOCK, sort_field=AssetSortField.CHANGE_PERCENT, descending=True, limit=10)
+
+            self.assertEqual(result.as_of_date, "2026-11-16")
+            self.assertEqual([item.stock.secid for item in result.items], ["300750.SZ", "600519.SH"])
+            self.assertEqual(result.items[0].amount, 4890000000.0)
+            self.assertEqual(result.items[0].change_percent, 2.40)
+            self.assertEqual(result.items[0].sparkline, (258.6, 264.8))
+            self.assertEqual(cache.count_items(AssetCategory.STOCK), 2)
+
+    def test_catalog_adapter_enriches_sparklines_via_tencent_when_push2his_down(self):
+        def _tencent_handler(url: str, params: dict) -> str | None:
+            if "hq.sinajs.cn/list=" in url:
+                return (
+                    'var hq_str_sh000001="上证指数,3600.0,3602.5,3610.0,3615.0,3595.0,0,0,120000000,150000000000.0,'
+                    + ",".join(["0"] * 20)
+                    + ',2026-11-17,09:35:00,00";\n'
+                )
+            if "Market_Center.getHQNodeData" in url and params.get("node") == "etf_hq_fund":
+                return json.dumps(
+                    [
+                        {
+                            "symbol": "sh510300",
+                            "name": "沪深300ETF",
+                            "trade": "4.041",
+                            "settlement": "4.054",
+                            "pricechange": "-0.013",
+                            "changepercent": "-0.32",
+                            "volume": 18931200,
+                            "amount": 76466833,
+                        }
+                    ],
+                    ensure_ascii=False,
+                )
+            if "web.ifzq.gtimg.cn" in url:
+                return json.dumps(
+                    {
+                        "data": {
+                            "sh510300": {
+                                "qfqday": [
+                                    ["2026-11-16", "4.068", "4.054", "4.075", "4.036", "19985629.000"],
+                                    ["2026-11-17", "4.04", "4.04", "4.04", "4.04", "189312"],
+                                ]
+                            }
+                        }
+                    }
+                )
+            if "push2his.eastmoney.com" in url:
+                raise MarketDataUnavailable("push2his dropped")
+            return None
+
+        adapter = MarketAssetCatalogAdapter(_FakeHttpClient(handler=_tencent_handler), ttl_seconds=0)
+        result = adapter.list_assets(AssetCategory.ETF, sort_field=AssetSortField.AMOUNT, descending=True, limit=10)
+        self.assertEqual(result.as_of_date, "2026-11-17")
+        self.assertEqual(len(result.items), 1)
+        # Tencent 今日 K 线保留 2 位近似值时，应替换为实时精确 3 位价格 4.041
+        self.assertEqual(result.items[0].sparkline, (4.054, 4.041))
+
+    def test_catalog_adapter_enriches_sparklines_via_sina_jsonp_and_appends_live_latest(self):
+        def _sina_kline_handler(url: str, params: dict) -> str | None:
+            if "hq.sinajs.cn/list=" in url:
+                return (
+                    'var hq_str_sh000001="上证指数,3600.0,3602.5,3610.0,3615.0,3595.0,0,0,120000000,150000000000.0,'
+                    + ",".join(["0"] * 20)
+                    + ',2026-11-17,09:35:00,00";\n'
+                )
+            if "Market_Center.getHQNodeData" in url and params.get("node") == "etf_hq_fund":
+                return json.dumps(
+                    [
+                        {
+                            "symbol": "sh510300",
+                            "name": "沪深300ETF",
+                            "trade": "4.041",
+                            "settlement": "4.054",
+                            "pricechange": "-0.013",
+                            "changepercent": "-0.32",
+                            "volume": 18931200,
+                            "amount": 76466833,
+                        }
+                    ],
+                    ensure_ascii=False,
+                )
+            if "CN_MarketDataService.getKLineData" in url:
+                return (
+                    "/* comment */\nvar _data=(["
+                    '{"day":"2026-11-13","open":"4.020","high":"4.070","low":"4.010","close":"4.068","volume":"1800000"},'
+                    '{"day":"2026-11-16","open":"4.068","high":"4.075","low":"4.036","close":"4.054","volume":"1998562938"}'
+                    "]);"
+                )
+            return None
+
+        adapter = MarketAssetCatalogAdapter(_FakeHttpClient(handler=_sina_kline_handler), ttl_seconds=0)
+        result = adapter.list_assets(AssetCategory.ETF, sort_field=AssetSortField.AMOUNT, descending=True, limit=10)
+        self.assertEqual(result.as_of_date, "2026-11-17")
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0].sparkline, (4.068, 4.054, 4.041))
 
     def test_sqlite_tracking_store_upsert_idempotent_and_readonly(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -38,7 +38,7 @@ backend/
 ├── infrastructure/
 │   ├── http/                  # 通用传输客户端
 │   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池与资产清单适配器；新浪备用 K 线（前复权）、实时/批量报价、证券清单与资产清单，以及主备切换装饰器（主源连续失败时短时熔断）
-│   ├── cache/                 # 缓存装饰器，不污染用例
+│   ├── cache/                 # K 线内存缓存与 SQLite 最近活跃行情资产缓存（`asset_catalog_cache.py`，`var/cache/` 不入库），不污染用例
 │   ├── persistence/           # 本地 JSON 报价存储、SQLite 榜单快照/租约/检查点、SQLite 用户跟踪存储（只读查询+独立写入）
 │   └── auth/                  # 报名系统网关（code 兑换身份、URL Link）与 HMAC 签名会话
 ├── interfaces/api/            # FastAPI 路由（行情 routes.py、H5 登录 auth_routes.py、原生登录 app_auth_routes.py、原生跟踪 app_tracking_routes.py）、Pydantic DTO、异常映射

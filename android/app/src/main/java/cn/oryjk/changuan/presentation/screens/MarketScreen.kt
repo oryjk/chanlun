@@ -250,14 +250,17 @@ private fun MarketAssetLedgerRow(
     val toneColor = palette.directionColor(item.changePercent)
     val metaText = buildString {
         append(item.stock.symbol)
-        append("  ")
+        append(" ")
         append(item.stock.market)
+        if (item.amount > 0.0) {
+            append("  成交 ")
+            append(MarketFormat.volume(item.amount))
+        } else if (item.volume <= 0.0) {
+            append("  停牌/未成交")
+        }
         if (!item.signalLabel.isNullOrBlank()) {
             append("  ")
             append(item.signalLabel)
-        } else if (item.amount > 0.0) {
-            append("  成交 ")
-            append(MarketFormat.volume(item.amount))
         }
     }
 

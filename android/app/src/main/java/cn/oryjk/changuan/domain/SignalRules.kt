@@ -1,6 +1,8 @@
 package cn.oryjk.changuan.domain
 
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.pow
 
 object MarketFormat {
     fun price(value: Double?, decimals: Int): String {
@@ -10,11 +12,13 @@ object MarketFormat {
 
     fun signedPrice(value: Double?, decimals: Int): String {
         if (value == null || !value.isFinite()) return "—"
+        if (abs(value) < 0.5 * 10.0.pow(-decimals)) return price(0.0, decimals)
         return String.format(Locale.US, "%+.*f".replace("*", decimals.toString()), value)
     }
 
     fun percent(value: Double?): String {
         if (value == null || !value.isFinite()) return "—"
+        if (abs(value) < 0.005) return "0.00%"
         return String.format(Locale.US, "%+.2f%%", value)
     }
 

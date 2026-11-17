@@ -21,6 +21,7 @@ from ..domain.services.signal_quality import SignalQualityEvaluator
 from ..domain.services.structure_guidance import StructureGuidanceEvaluator
 from ..infrastructure.auth.registration_gateway import RegistrationSystemGateway
 from ..infrastructure.auth.signed_session_codec import SignedSessionCodec
+from ..infrastructure.cache.asset_catalog_cache import SqliteAssetCatalogCache
 from ..infrastructure.cache.market_data_cache import CachedMarketDataReader
 from ..infrastructure.clock import SystemClock
 from ..infrastructure.http.json_client import JsonHttpClient
@@ -80,7 +81,10 @@ def build_application(settings: Settings) -> Application:
     )
     snapshot_query = GetMarketSnapshotQuery(market_data, pipeline, clock)
     ranking_store = SqliteRankingStore(settings.ranking_store_path)
-    asset_catalog = MarketAssetCatalogAdapter(http_client)
+    asset_catalog = MarketAssetCatalogAdapter(
+        http_client,
+        cache_store=SqliteAssetCatalogCache(settings.asset_catalog_cache_path),
+    )
     stock_universe = FallbackStockUniverseReader(EastmoneyStockPoolReader(http_client), SinaStockPoolReader(http_client))
     build_daily_rankings = BuildDailyRankingsCommand(
         stock_universe,

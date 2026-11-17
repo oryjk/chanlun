@@ -53,21 +53,28 @@ class GetMarketAssetsQuery:
             for entry in (*board.bullish, *board.bearish):
                 ranking_by_secid.setdefault(entry.stock.secid, entry)
 
-        as_of_date = (
+        fallback_as_of_date = (
             board.trade_date.isoformat()
             if board is not None and board.trade_date is not None
             else self._clock.now().astimezone(_SHANGHAI_TZ).date().isoformat()
         )
+        as_of_date = fallback_as_of_date
 
         items: tuple[MarketAssetItem, ...] = ()
         live_error: ChanlunError | None = None
         try:
-            items = self._catalog_reader.list_assets(
+            catalog = self._catalog_reader.list_assets(
                 parsed_category,
                 sort_field=parsed_sort,
                 descending=descending,
                 limit=clamped_limit,
             )
+            if isinstance(catalog, MarketAssetList):
+                items = catalog.items
+                if items and catalog.as_of_date:
+                    as_of_date = catalog.as_of_date
+            else:
+                items = tuple(catalog)
         except ChanlunError as error:
             live_error = error
 
@@ -81,6 +88,7 @@ class GetMarketAssetsQuery:
                 limit=clamped_limit,
             )
             if items:
+                as_of_date = board.trade_date.isoformat()
                 live_error = None
 
         if live_error is not None and not items:

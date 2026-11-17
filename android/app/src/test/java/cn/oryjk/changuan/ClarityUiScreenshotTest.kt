@@ -34,6 +34,7 @@ import cn.oryjk.changuan.domain.Instrument
 import cn.oryjk.changuan.domain.LevelSignal
 import cn.oryjk.changuan.domain.MacdPoint
 import cn.oryjk.changuan.domain.MarketAssetItem
+import cn.oryjk.changuan.domain.MarketFormat
 import cn.oryjk.changuan.domain.MarketGuidance
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
@@ -66,6 +67,7 @@ import cn.oryjk.changuan.presentation.screens.MarketScreen
 import cn.oryjk.changuan.presentation.screens.RankingScreen
 import cn.oryjk.changuan.presentation.screens.StockSearchScreen
 import cn.oryjk.changuan.presentation.screens.TrackingScreen
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -527,6 +529,10 @@ class ClarityUiScreenshotTest {
 
     @Test
     fun renderMarketListLight() {
+        assertEquals("0.00%", MarketFormat.percent(0.0))
+        assertEquals("+1.30%", MarketFormat.percent(1.3))
+        assertEquals("-0.88%", MarketFormat.percent(-0.88))
+
         val state = sampleState(dark = false)
         composeRule.setContent {
             PreviewScaffold(darkTheme = false, tab = RootTab.MARKET) { m ->
@@ -543,6 +549,9 @@ class ClarityUiScreenshotTest {
                 )
             }
         }
+        composeRule.onNodeWithText("600519 沪A  成交 57.67 亿  二类买点").assertExists()
+        composeRule.onNodeWithText("300750 深A  成交 48.90 亿  一类买点").assertExists()
+        composeRule.onNodeWithText("600036 沪A  成交 16.18 亿").assertExists()
         captureAllWindows("market_list_light.png", darkTheme = false)
     }
 

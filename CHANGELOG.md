@@ -1,5 +1,16 @@
 # 变更日志
 
+## 2026-11-17 · 1.2.1（versionCode 6）· 修复行情列表成交额/涨跌幅为空与盘前清零问题并补齐走势小线
+
+- 变更（后端沪深分节点查询、盘前缓存与 20 日走势小线补齐）：
+  - `MarketAssetCatalogAdapter` 查询股票改为分别请求新浪 `sh_a` 与 `sz_a` 并过滤停牌/零成交标的多页补齐，消除旧 `hs_a` 节点中 88 只北交所代码被过滤后升序仅剩 12 只以及停牌 `*ST` / 零成交 ETF 占榜首的问题。
+  - 新增 `SqliteAssetCatalogCache`（`var/cache/asset_catalog.sqlite3`）按交易日持久化活跃资产快照，并结合 `hq.sinajs.cn` 实时探针判断盘前 `09:00–09:25` 交易所清零窗口；清零期自动服务上一交易日完整成交额与涨跌幅（冷启动期间自动通过日 K 线补齐）。
+  - 返回 `as_of_date` 取自真实行情日期，不再被旧收盘榜单日期覆盖；同时通过新浪 JSONP 日 K 线（腾讯 `fqkline` 与东方财富 `push2his` 备用）并发补齐列表全量 60 只标的的 20 日走势小线，并在 `JsonHttpClient` 中默认直连国内行情源避免环境变量代理干扰。
+- 变更（Android 客户端列表与涨跌幅展示修复）：
+  - 修复 `MarketScreen.kt` `MarketAssetLedgerRow` 中 `signalLabel` 与 `成交额` 的 `else if` 互斥分支 bug，统一同时展示 `代码 市场  成交 XX.XX 亿  买卖点`（停牌零成交显式标注 `停牌/未成交`）。
+  - 修正 `MarketFormat.percent` / `signedPrice` 在零值（`< 0.005%`）时误加 `+` 号被渲染成红色 `+0.00%` 的问题，零涨跌保持中性灰 `0.00%`。
+  - Android 版本升级为 `1.2.1`（`versionCode = 6`）。
+
 ## 2026-11-17 · 1.2.0（versionCode 5）· 新增「跟踪」Tab、无卡片股票/ETF 行情列表与详情页、OLED 纯黑深色模式及榜单显示修复
 
 - 变更（新增「跟踪」功能与第二项导航 Tab）：原生 Android 底部与平板侧栏扩展为 `行情 / 跟踪 / 榜单 / 菜单` 四项（第二项「跟踪」含活跃跟踪圆点提示）。新增后端 `GET /api/app-tracking`、`POST /api/app-tracking/start`、`POST /api/app-tracking/cancel`（SQLite 读写分离 + 账号注销联动清理）与前端 `TrackingScreen`，对齐策略家模拟跟踪体验（每只 ¥10,000 模拟本金记账、六档植物成长阶段图标与标签、累计/当日盈亏与天数排序、置顶/自定义顺序调整、批量结束确认、快速 `+ 跟踪` 选股弹窗及暖琥珀「跟踪中」嫩芽胶囊）。

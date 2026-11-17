@@ -2,7 +2,7 @@ from datetime import date
 from typing import Callable, Protocol
 
 from ...domain.models import MarketData, QuoteSeries, RealtimeQuote, Stock, TimeFrame
-from ...domain.tracking import AssetCategory, AssetSortField, MarketAssetItem
+from ...domain.tracking import AssetCategory, AssetSortField, MarketAssetList
 from ..ranking_jobs import RankingItem, RankingView
 
 
@@ -43,7 +43,7 @@ class MarketAssetCatalogReader(Protocol):
         sort_field: AssetSortField,
         descending: bool,
         limit: int,
-    ) -> tuple[MarketAssetItem, ...]: ...
+    ) -> MarketAssetList: ...
 
 
 class QuoteSeriesReader(Protocol):
