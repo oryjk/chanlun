@@ -33,6 +33,7 @@ from backend.domain.models import (
     RealtimeQuote,
     Stock,
     TimeFrame,
+    UserIdentity,
 )
 from backend.domain.tracking import (
     AssetCategory,
@@ -53,6 +54,7 @@ from backend.interfaces.api.app_auth_routes import router as app_auth_router
 from backend.interfaces.api.app_tracking_routes import router as app_tracking_router
 from backend.interfaces.api.error_handlers import register_error_handlers
 from backend.interfaces.api.routes import router as market_router
+from backend.interfaces.api.tracking_routes import router as h5_tracking_router
 
 
 class _FixedClock:
@@ -629,6 +631,12 @@ class MarketAssetsAndTrackingHttpTests(unittest.TestCase):
             clock=clock,
             store_path=str(Path(cls.temp.name) / "track.db"),
         )
+        class _StubSessionQuery:
+            def execute(self, session_cookie: str | None) -> UserIdentity | None:
+                if session_cookie == "valid-h5-cookie":
+                    return UserIdentity(user_id=42, nickname="微信用户42")
+                return None
+
         catalog_item = MarketAssetItem(stock, 1453.9, 18.64, 1.3, 1426.3, 1454.93, 1425.0, 1435.26, 3996700, 5767305714.0)
         app.state.queries = QueryServices(
             search_stocks=None,
@@ -637,12 +645,13 @@ class MarketAssetsAndTrackingHttpTests(unittest.TestCase):
             get_quote_series=None,
             get_rankings=None,
             get_signal_confluence=None,
-            get_current_user=None,
+            get_current_user=_StubSessionQuery(),
             get_mini_program_link=None,
             get_market_assets=GetMarketAssetsQuery(_StubCatalogReader(items=(catalog_item,)), ranking_reader, clock),
         )
         app.state.commands = CommandServices(None, None, None)
         app.include_router(market_router)
+        app.include_router(h5_tracking_router)
         app.include_router(app_auth_router)
         app.include_router(app_tracking_router)
         register_error_handlers(app)
@@ -663,10 +672,12 @@ class MarketAssetsAndTrackingHttpTests(unittest.TestCase):
         cls.thread.join(5)
         cls.temp.cleanup()
 
-    def request(self, path: str, body=None, token: str | None = None):
+    def request(self, path: str, body=None, token: str | None = None, cookie: str | None = None):
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        if cookie:
+            headers["Cookie"] = cookie
         req = Request(self.base + path, data=json.dumps(body).encode() if body is not None else None, headers=headers)
         try:
             with urlopen(req, timeout=5) as resp:
@@ -684,6 +695,8 @@ class MarketAssetsAndTrackingHttpTests(unittest.TestCase):
         self.assertEqual(self.request("/api/market/assets?category=invalid")[0], 400)
         self.assertEqual(self.request("/api/app-tracking")[0], 401)
         self.assertEqual(self.request("/api/app-tracking/start", {"secid": "600519.SH"})[0], 401)
+        self.assertEqual(self.request("/api/tracking")[0], 401)
+        self.assertEqual(self.request("/api/tracking/start", {"secid": "600519.SH"})[0], 401)
 
         self.request("/api/app-auth/email/code", {"email": "track@example.com"})
         code = self.email_gateway.codes["track@example.com"]
@@ -698,6 +711,19 @@ class MarketAssetsAndTrackingHttpTests(unittest.TestCase):
         self.assertTrue(started["ok"])
         self.assertEqual(started["item"]["secid"], "600519.SH")
 
+        # Verify H5 cookie user stays isolated from native Bearer user
+        h5_cookie = "chanlun_session=valid-h5-cookie"
+        status, h5_empty = self.request("/api/tracking", cookie=h5_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(h5_empty["items"], [])
+
+        status, h5_started = self.request("/api/tracking/start", {"secid": "600519.SH"}, cookie=h5_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(h5_started["item"]["secid"], "600519.SH")
+        status, h5_list = self.request("/api/tracking", cookie=h5_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(h5_list["items"]), 1)
+
         status, overview = self.request("/api/app-tracking", token=token)
         self.assertEqual(status, 200)
         self.assertEqual(len(overview["items"]), 1)
@@ -707,6 +733,14 @@ class MarketAssetsAndTrackingHttpTests(unittest.TestCase):
         status, canceled = self.request("/api/app-tracking/cancel", {"secids": ["600519.SH"]}, token=token)
         self.assertEqual(status, 200)
         self.assertEqual(canceled["removed"], 1)
+
+        # Native cancel must not delete H5 user's tracked asset
+        status, h5_still_present = self.request("/api/tracking", cookie=h5_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(h5_still_present["items"]), 1)
+        status, h5_canceled = self.request("/api/tracking/cancel", {"secid": "600519.SH"}, cookie=h5_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(h5_canceled["removed"], 1)
 
         _, empty_overview = self.request("/api/app-tracking", token=token)
         self.assertEqual(empty_overview["items"], [])

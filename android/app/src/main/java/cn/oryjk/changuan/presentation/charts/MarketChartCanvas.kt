@@ -15,18 +15,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.dp
 import cn.oryjk.changuan.domain.ChartLayers
 import cn.oryjk.changuan.domain.ChartViewport
 import cn.oryjk.changuan.domain.MarketFormat
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketTime
 import cn.oryjk.changuan.domain.PriceProjection
+import cn.oryjk.changuan.domain.computeLabelPillBox
+import cn.oryjk.changuan.domain.computePointBadgeBox
 import cn.oryjk.changuan.presentation.LocalChanPalette
 import kotlin.math.abs
 import kotlin.math.max
@@ -51,9 +55,14 @@ fun MarketChartCanvas(
         viewport = ChartViewport.initial(candles.size)
     }
 
-    val textPaint = remember {
+    val axisTextPaint = remember {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.SANS_SERIF
+        }
+    }
+    val badgeTextPaint = remember {
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
     }
 
@@ -96,20 +105,23 @@ fun MarketChartCanvas(
         if (candles.isEmpty()) return@Canvas
         val w = size.width.toDouble()
         val h = size.height.toDouble()
-        val padLeft = 12.0
-        val padRight = 12.0
+        val padLeft = 8.dp.toPx().toDouble()
+        val padRight = 8.dp.toPx().toDouble()
         val plotWidth = max(1.0, w - padLeft - padRight)
 
-        val mainTop = 14.0
-        val mainHeight = h * 0.62
+        val mainTop = 6.dp.toPx().toDouble()
+        val sectionGap = 10.dp.toPx().toDouble()
+        val dateFooterH = 18.dp.toPx().toDouble()
+        val usableH = max(80.dp.toPx().toDouble(), h - mainTop - sectionGap * 2.0 - dateFooterH)
+        val mainHeight = usableH * 0.66
         val mainBottom = mainTop + mainHeight
 
-        val volTop = mainBottom + 12.0
-        val volHeight = h * 0.14
+        val volTop = mainBottom + sectionGap
+        val volHeight = usableH * 0.14
         val volBottom = volTop + volHeight
 
-        val macdTop = volBottom + 12.0
-        val macdHeight = max(24.0, h - macdTop - 22.0)
+        val macdTop = volBottom + sectionGap
+        val macdHeight = max(20.dp.toPx().toDouble(), usableH - mainHeight - volHeight)
         val macdBottom = macdTop + macdHeight
 
         val startIdx = max(0, viewport.lower.toInt())
@@ -135,11 +147,12 @@ fun MarketChartCanvas(
             }
         }
 
+        val badgeReserve = min(22.dp.toPx().toDouble(), mainHeight * 0.20)
         val priceProjection = PriceProjection(
             minimum = minPrice,
             maximum = maxPrice,
-            top = mainTop,
-            height = mainHeight,
+            top = mainTop + badgeReserve,
+            height = max(24.dp.toPx().toDouble(), mainHeight - badgeReserve * 2.0),
         )
 
         fun xForIndex(index: Int): Float {
@@ -148,8 +161,9 @@ fun MarketChartCanvas(
         }
 
         val barSlot = (plotWidth / viewport.span).toFloat()
-        val bodyWidth = max(1.5f, min(14f, barSlot * 0.68f))
-        val dashedEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
+        val bodyWidth = max(1.2.dp.toPx(), min(10.dp.toPx(), barSlot * 0.68f))
+        val dashedEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()), 0f)
+        val gridStroke = 0.75.dp.toPx()
 
         // 1. Horizontal grid lines
         for (step in 0..3) {
@@ -158,24 +172,27 @@ fun MarketChartCanvas(
                 color = palette.cardBorder,
                 start = Offset(padLeft.toFloat(), y),
                 end = Offset((w - padRight).toFloat(), y),
-                strokeWidth = 1f,
+                strokeWidth = gridStroke,
             )
         }
         drawLine(
             color = palette.cardBorder,
             start = Offset(padLeft.toFloat(), volTop.toFloat()),
             end = Offset((w - padRight).toFloat(), volTop.toFloat()),
-            strokeWidth = 1f,
+            strokeWidth = gridStroke,
         )
         drawLine(
             color = palette.cardBorder,
             start = Offset(padLeft.toFloat(), macdTop.toFloat()),
             end = Offset((w - padRight).toFloat(), macdTop.toFloat()),
-            strokeWidth = 1f,
+            strokeWidth = gridStroke,
         )
 
         // 2. Zhongshu boxes (under candles so boxes don't hide wicks; labels drawn LAST on top)
         if (layers.zhongshu) {
+            val minRectW = 3.dp.toPx()
+            val minRectH = 1.5.dp.toPx()
+            val zoneStroke = 1.2.dp.toPx()
             snapshot.analysis.zhongshu.forEach { z ->
                 if (z.endIndex < startIdx || z.startIndex > endIdx) return@forEach
                 val x1 = xForIndex(max(startIdx, z.startIndex))
@@ -183,9 +200,9 @@ fun MarketChartCanvas(
                 val yTop = priceProjection.y(z.high).toFloat()
                 val yBottom = priceProjection.y(z.low).toFloat()
                 val rectLeft = min(x1, x2)
-                val rectWidth = max(4f, abs(x2 - x1))
+                val rectWidth = max(minRectW, abs(x2 - x1))
                 val rectTop = min(yTop, yBottom)
-                val rectHeight = max(2f, abs(yBottom - yTop))
+                val rectHeight = max(minRectH, abs(yBottom - yTop))
                 drawRect(
                     color = palette.zhongshuViolet.copy(alpha = if (palette.isDark) 0.16f else 0.10f),
                     topLeft = Offset(rectLeft, rectTop),
@@ -196,7 +213,7 @@ fun MarketChartCanvas(
                     topLeft = Offset(rectLeft, rectTop),
                     size = Size(rectWidth, rectHeight),
                     style = Stroke(
-                        width = 1.6f,
+                        width = zoneStroke,
                         pathEffect = if (z.confirmed) null else dashedEffect,
                     ),
                 )
@@ -205,6 +222,8 @@ fun MarketChartCanvas(
 
         // 3. Candlesticks & Volume bars
         val maxVol = visibleCandles.maxOfOrNull { it.volume }?.coerceAtLeast(1.0) ?: 1.0
+        val wickStroke = 1.dp.toPx()
+        val minBodyH = 1.2.dp.toPx()
         for (i in startIdx..endIdx) {
             val c = candles[i]
             val cx = xForIndex(i)
@@ -219,10 +238,10 @@ fun MarketChartCanvas(
                 color = barColor,
                 start = Offset(cx, highY),
                 end = Offset(cx, lowY),
-                strokeWidth = 1.2f,
+                strokeWidth = wickStroke,
             )
             val topY = min(openY, closeY)
-            val boxH = max(1.5f, abs(closeY - openY))
+            val boxH = max(minBodyH, abs(closeY - openY))
             drawRect(
                 color = barColor,
                 topLeft = Offset(cx - bodyWidth / 2f, topY),
@@ -252,7 +271,7 @@ fun MarketChartCanvas(
                 color = palette.cardBorder,
                 start = Offset(padLeft.toFloat(), zeroY),
                 end = Offset((w - padRight).toFloat(), zeroY),
-                strokeWidth = 1f,
+                strokeWidth = gridStroke,
             )
 
             fun macdY(v: Double): Float =
@@ -261,6 +280,8 @@ fun MarketChartCanvas(
             val difPath = Path()
             val deaPath = Path()
             var started = false
+            val macdBarStroke = max(1.dp.toPx(), bodyWidth * 0.6f)
+            val macdLineStroke = 1.2.dp.toPx()
             for (i in startIdx..min(endIdx, snapshot.macd.size - 1)) {
                 val m = snapshot.macd[i]
                 val cx = xForIndex(i)
@@ -270,7 +291,7 @@ fun MarketChartCanvas(
                     color = histColor.copy(alpha = 0.72f),
                     start = Offset(cx, zeroY),
                     end = Offset(cx, hY),
-                    strokeWidth = max(1.2f, bodyWidth * 0.6f),
+                    strokeWidth = macdBarStroke,
                 )
                 val dY = macdY(m.dif)
                 val eY = macdY(m.dea)
@@ -284,20 +305,22 @@ fun MarketChartCanvas(
                 }
             }
             if (started) {
-                drawPath(difPath, color = palette.segmentBlue, style = Stroke(width = 1.5f))
-                drawPath(deaPath, color = palette.penGold, style = Stroke(width = 1.5f))
+                drawPath(difPath, color = palette.segmentBlue, style = Stroke(width = macdLineStroke))
+                drawPath(deaPath, color = palette.penGold, style = Stroke(width = macdLineStroke))
             }
         }
 
         // 5. Fractals
         if (layers.fractals) {
+            val fractalOffset = 4.dp.toPx()
+            val fractalRadius = 2.2.dp.toPx()
             snapshot.analysis.fractals.forEach { f ->
                 if (f.candleIndex !in startIdx..endIdx) return@forEach
                 val cx = xForIndex(f.candleIndex)
-                val cy = priceProjection.y(f.price).toFloat() + if (f.type == "top") -6f else 6f
+                val cy = priceProjection.y(f.price).toFloat() + if (f.type == "top") -fractalOffset else fractalOffset
                 drawCircle(
                     color = palette.fractalSlate,
-                    radius = 3.2f,
+                    radius = fractalRadius,
                     center = Offset(cx, cy),
                 )
             }
@@ -305,6 +328,7 @@ fun MarketChartCanvas(
 
         // 6. Pens
         if (layers.pens) {
+            val penStroke = 1.5.dp.toPx()
             snapshot.analysis.pens.forEach { pen ->
                 if (pen.endIndex < startIdx || pen.startIndex > endIdx) return@forEach
                 val x1 = xForIndex(pen.startIndex)
@@ -315,7 +339,7 @@ fun MarketChartCanvas(
                     color = palette.penGold,
                     start = Offset(x1, y1),
                     end = Offset(x2, y2),
-                    strokeWidth = 2.0f,
+                    strokeWidth = penStroke,
                     pathEffect = if (pen.confirmed) null else dashedEffect,
                 )
             }
@@ -323,6 +347,7 @@ fun MarketChartCanvas(
 
         // 7. Segments
         if (layers.segments) {
+            val segStroke = 2.0.dp.toPx()
             snapshot.analysis.segments.forEach { seg ->
                 if (seg.endIndex < startIdx || seg.startIndex > endIdx) return@forEach
                 val x1 = xForIndex(seg.startIndex)
@@ -333,13 +358,14 @@ fun MarketChartCanvas(
                     color = palette.segmentBlue,
                     start = Offset(x1, y1),
                     end = Offset(x2, y2),
-                    strokeWidth = 2.8f,
+                    strokeWidth = segStroke,
                     pathEffect = if (seg.confirmed) null else dashedEffect,
                 )
             }
         }
 
         // 8. Invalidation price line if present
+        val guideStroke = 1.dp.toPx()
         snapshot.signalQuality?.invalidationPrice?.let { invPrice ->
             if (invPrice.isFinite()) {
                 val invY = priceProjection.y(invPrice).toFloat()
@@ -348,7 +374,7 @@ fun MarketChartCanvas(
                         color = palette.zhongshuViolet.copy(alpha = 0.72f),
                         start = Offset(padLeft.toFloat(), invY),
                         end = Offset((w - padRight).toFloat(), invY),
-                        strokeWidth = 1.2f,
+                        strokeWidth = guideStroke,
                         pathEffect = dashedEffect,
                     )
                 }
@@ -362,55 +388,91 @@ fun MarketChartCanvas(
                 color = palette.inkSecondary.copy(alpha = 0.55f),
                 start = Offset(sx, mainTop.toFloat()),
                 end = Offset(sx, macdBottom.toFloat()),
-                strokeWidth = 1.2f,
+                strokeWidth = guideStroke,
                 pathEffect = dashedEffect,
             )
         }
 
         // 10. TOP-MOST TEXT LAYER (Zhongshu labels, Buy/Sell point badges, Axis labels)
-        val density = drawContext.density.density
-        textPaint.textSize = 10f * density
+        axisTextPaint.textSize = 10.dp.toPx()
+        badgeTextPaint.textSize = 10.dp.toPx()
+        val axisFm = axisTextPaint.fontMetrics
+        val badgeFm = badgeTextPaint.fontMetrics
 
-        textPaint.color = palette.inkMuted.toArgb()
+        val axisX = padLeft.toFloat() + 3.dp.toPx()
+        val topAxisBaseline = mainTop.toFloat() + 2.dp.toPx() - axisFm.ascent
+        val bottomAxisBaseline = mainBottom.toFloat() - 2.dp.toPx() - axisFm.descent
+        axisTextPaint.color = palette.inkMuted.toArgb()
         drawContext.canvas.nativeCanvas.drawText(
-            MarketFormat.price(priceProjection.maximum, decimals),
-            (padLeft + 4).toFloat(),
-            (mainTop + 12).toFloat(),
-            textPaint,
+            MarketFormat.price(priceProjection.priceAt(mainTop), decimals),
+            axisX,
+            topAxisBaseline,
+            axisTextPaint,
         )
         drawContext.canvas.nativeCanvas.drawText(
-            MarketFormat.price(priceProjection.minimum, decimals),
-            (padLeft + 4).toFloat(),
-            (mainBottom - 4).toFloat(),
-            textPaint,
+            MarketFormat.price(priceProjection.priceAt(mainBottom), decimals),
+            axisX,
+            bottomAxisBaseline,
+            axisTextPaint,
         )
+
+        val minBadgeY = mainTop.toFloat() + 2.dp.toPx()
+        val maxBadgeY = mainBottom.toFloat() - 2.dp.toPx()
 
         if (layers.zhongshu) {
+            val zPadX = 4.dp.toPx()
+            val zPadY = 2.dp.toPx()
+            val zGap = 2.dp.toPx()
+            val zAnchorOffset = 3.dp.toPx()
+            val zRadius = 3.dp.toPx()
+            val zBorderStroke = 0.8.dp.toPx()
             snapshot.analysis.zhongshu.forEach { z ->
                 if (z.endIndex < startIdx || z.startIndex > endIdx) return@forEach
                 val x1 = xForIndex(max(startIdx, z.startIndex))
                 val yTop = priceProjection.y(z.high).toFloat()
                 val label = "Z${z.id}${if (z.confirmed) "" else "?"}"
-                val textWidth = textPaint.measureText(label)
-                val badgeLeft = (x1 + 3f).coerceIn(padLeft.toFloat(), (w - padRight - textWidth - 10).toFloat())
-                val badgeTop = (yTop - 16f).coerceAtLeast(mainTop.toFloat() + 2f)
+                val pill = computeLabelPillBox(
+                    anchorLeft = x1 + zAnchorOffset,
+                    anchorTop = yTop - zGap,
+                    textWidth = badgeTextPaint.measureText(label),
+                    fontAscent = badgeFm.ascent,
+                    fontDescent = badgeFm.descent,
+                    padX = zPadX,
+                    padY = zPadY,
+                    minX = padLeft.toFloat(),
+                    maxX = (w - padRight).toFloat(),
+                    minY = minBadgeY,
+                    maxY = maxBadgeY,
+                )
                 drawRoundRect(
                     color = palette.backgroundCanvas.copy(alpha = 0.92f),
-                    topLeft = Offset(badgeLeft, badgeTop),
-                    size = Size(textWidth + 8f, 15f),
-                    cornerRadius = CornerRadius(3f, 3f),
+                    topLeft = Offset(pill.left, pill.top),
+                    size = Size(pill.width, pill.height),
+                    cornerRadius = CornerRadius(zRadius, zRadius),
                 )
-                textPaint.color = palette.zhongshuViolet.toArgb()
+                drawRoundRect(
+                    color = palette.zhongshuViolet.copy(alpha = 0.35f),
+                    topLeft = Offset(pill.left, pill.top),
+                    size = Size(pill.width, pill.height),
+                    cornerRadius = CornerRadius(zRadius, zRadius),
+                    style = Stroke(width = zBorderStroke),
+                )
+                badgeTextPaint.color = palette.zhongshuViolet.toArgb()
                 drawContext.canvas.nativeCanvas.drawText(
                     label,
-                    badgeLeft + 4f,
-                    badgeTop + 11.5f,
-                    textPaint,
+                    pill.textX,
+                    pill.textBaselineY,
+                    badgeTextPaint,
                 )
             }
         }
 
         if (layers.points) {
+            val pPadX = 5.dp.toPx()
+            val pPadY = 2.5.dp.toPx()
+            val pAnchorGap = 7.dp.toPx()
+            val pRadius = 3.5.dp.toPx()
+            val candidateBorder = 1.2.dp.toPx()
             snapshot.signals.points.forEach { pt ->
                 if (pt.candleIndex !in startIdx..endIdx) return@forEach
                 val cx = xForIndex(pt.candleIndex)
@@ -418,36 +480,42 @@ fun MarketChartCanvas(
                 val isBuy = pt.side == "buy"
                 val badgeColor = if (isBuy) palette.positiveRed else palette.negativeGreen
                 val tag = "${pt.shortTag}${if (pt.confirmed) "" else "?"}"
-                val tw = textPaint.measureText(tag)
-                val boxW = tw + 10f
-                val boxH = 16f
-                val boxLeft = (cx - boxW / 2f).coerceIn(padLeft.toFloat(), (w - padRight - boxW).toFloat())
-                val boxTop = if (isBuy) {
-                    min((mainBottom - boxH - 2).toFloat(), cy + 6f)
-                } else {
-                    max(mainTop.toFloat() + 2f, cy - boxH - 6f)
-                }
+                val box = computePointBadgeBox(
+                    anchorX = cx,
+                    anchorY = cy,
+                    isBelowAnchor = isBuy,
+                    textWidth = badgeTextPaint.measureText(tag),
+                    fontAscent = badgeFm.ascent,
+                    fontDescent = badgeFm.descent,
+                    padX = pPadX,
+                    padY = pPadY,
+                    anchorGap = pAnchorGap,
+                    minX = padLeft.toFloat(),
+                    maxX = (w - padRight).toFloat(),
+                    minY = minBadgeY,
+                    maxY = maxBadgeY,
+                )
                 drawRoundRect(
                     color = if (pt.confirmed) badgeColor else palette.backgroundCanvas,
-                    topLeft = Offset(boxLeft, boxTop),
-                    size = Size(boxW, boxH),
-                    cornerRadius = CornerRadius(3f, 3f),
+                    topLeft = Offset(box.left, box.top),
+                    size = Size(box.width, box.height),
+                    cornerRadius = CornerRadius(pRadius, pRadius),
                 )
                 if (!pt.confirmed) {
                     drawRoundRect(
                         color = badgeColor,
-                        topLeft = Offset(boxLeft, boxTop),
-                        size = Size(boxW, boxH),
-                        cornerRadius = CornerRadius(3f, 3f),
-                        style = Stroke(width = 1.3f, pathEffect = dashedEffect),
+                        topLeft = Offset(box.left, box.top),
+                        size = Size(box.width, box.height),
+                        cornerRadius = CornerRadius(pRadius, pRadius),
+                        style = Stroke(width = candidateBorder, pathEffect = dashedEffect),
                     )
                 }
-                textPaint.color = (if (pt.confirmed) palette.backgroundCanvas else badgeColor).toArgb()
+                badgeTextPaint.color = (if (pt.confirmed) Color.White else badgeColor).toArgb()
                 drawContext.canvas.nativeCanvas.drawText(
                     tag,
-                    boxLeft + 5f,
-                    boxTop + 12f,
-                    textPaint,
+                    box.textX,
+                    box.textBaselineY,
+                    badgeTextPaint,
                 )
             }
         }
@@ -456,19 +524,20 @@ fun MarketChartCanvas(
         val fmt = if (snapshot.timeframe == "1d") "yyyy-MM-dd" else "MM-dd HH:mm"
         val firstDate = MarketTime.formatDate(candles[startIdx].time, fmt, zone)
         val lastDate = MarketTime.formatDate(candles[endIdx].time, fmt, zone)
-        textPaint.color = palette.inkMuted.toArgb()
+        val dateBaseline = h.toFloat() - 2.dp.toPx() - axisFm.descent
+        axisTextPaint.color = palette.inkMuted.toArgb()
         drawContext.canvas.nativeCanvas.drawText(
             firstDate,
             padLeft.toFloat(),
-            (h - 4).toFloat(),
-            textPaint,
+            dateBaseline,
+            axisTextPaint,
         )
-        val lastWidth = textPaint.measureText(lastDate)
+        val lastWidth = axisTextPaint.measureText(lastDate)
         drawContext.canvas.nativeCanvas.drawText(
             lastDate,
             (w - padRight - lastWidth).toFloat(),
-            (h - 4).toFloat(),
-            textPaint,
+            dateBaseline,
+            axisTextPaint,
         )
     }
 }

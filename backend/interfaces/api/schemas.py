@@ -305,3 +305,39 @@ class MarketAssetListResponse(ApiModel):
     offset: int = 0
     has_more: bool = False
     items: tuple[MarketAssetItemResponse, ...]
+
+
+class StartTrackingRequest(BaseModel):
+    secid: str = Field(min_length=1, max_length=32)
+
+
+class CancelTrackingRequest(BaseModel):
+    secid: str | None = Field(default=None, max_length=32)
+    secids: list[str] = Field(default_factory=list, max_length=200)
+
+
+class TrackedAssetSummaryResponse(ApiModel):
+    stock: StockResponse
+    start_date: str
+    start_price: float
+    latest_price: float
+    day_return_pct: float
+    day_profit: float
+    cumulative_return_pct: float
+    cumulative_profit: float
+    current_value: float
+    sparkline: tuple[float, ...] = ()
+
+
+class TrackingOverviewResponse(ApiModel):
+    as_of_date: str
+    items: tuple[TrackedAssetSummaryResponse, ...]
+
+
+class TrackedAssetRecordResponse(ApiModel):
+    secid: str
+    symbol: str
+    name: str
+    market: str
+    start_date: str
+    start_price: float

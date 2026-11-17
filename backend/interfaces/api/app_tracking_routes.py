@@ -1,47 +1,17 @@
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
 
 from ...domain.app_auth import AppIdentity
 from .app_auth_routes import bearer
-from .schemas import ApiModel, StockResponse
+from .schemas import (
+    CancelTrackingRequest,
+    StartTrackingRequest,
+    StockResponse,
+    TrackedAssetRecordResponse,
+    TrackedAssetSummaryResponse,
+    TrackingOverviewResponse,
+)
 
 router = APIRouter(prefix="/api/app-tracking")
-
-
-class StartTrackingRequest(BaseModel):
-    secid: str = Field(min_length=1, max_length=32)
-
-
-class CancelTrackingRequest(BaseModel):
-    secid: str | None = Field(default=None, max_length=32)
-    secids: list[str] = Field(default_factory=list, max_length=200)
-
-
-class TrackedAssetSummaryResponse(ApiModel):
-    stock: StockResponse
-    start_date: str
-    start_price: float
-    latest_price: float
-    day_return_pct: float
-    day_profit: float
-    cumulative_return_pct: float
-    cumulative_profit: float
-    current_value: float
-    sparkline: tuple[float, ...] = ()
-
-
-class TrackingOverviewResponse(ApiModel):
-    as_of_date: str
-    items: tuple[TrackedAssetSummaryResponse, ...]
-
-
-class TrackedAssetRecordResponse(ApiModel):
-    secid: str
-    symbol: str
-    name: str
-    market: str
-    start_date: str
-    start_price: float
 
 
 def _require_user(request: Request) -> AppIdentity:
@@ -56,17 +26,15 @@ def _require_user(request: Request) -> AppIdentity:
     return user
 
 
-def _tracking_services(request: Request):
+def require_tracking_services(request: Request):
     services = getattr(request.app.state, "native_tracking", None)
     if services is None or services.query is None or services.commands is None:
         raise HTTPException(503, "跟踪服务尚未配置")
     return services
 
 
-@router.get("", response_model=TrackingOverviewResponse)
-def list_trackings(request: Request) -> TrackingOverviewResponse:
-    user = _require_user(request)
-    overview = _tracking_services(request).query.execute(user.user_id)
+def build_tracking_overview_response(overview) -> TrackingOverviewResponse:
+    """Serialize domain TrackingOverview into HTTP response DTO."""
     return TrackingOverviewResponse(
         as_of_date=overview.as_of_date.isoformat(),
         items=tuple(
@@ -87,10 +55,8 @@ def list_trackings(request: Request) -> TrackingOverviewResponse:
     )
 
 
-@router.post("/start")
-def start_tracking(request: Request, body: StartTrackingRequest) -> dict:
-    user = _require_user(request)
-    record = _tracking_services(request).commands.start(user.user_id, body.secid)
+def build_start_tracking_payload(record) -> dict:
+    """Serialize created/existing TrackedAssetRecord response payload."""
     return {
         "ok": True,
         "item": TrackedAssetRecordResponse(
@@ -104,11 +70,29 @@ def start_tracking(request: Request, body: StartTrackingRequest) -> dict:
     }
 
 
-@router.post("/cancel")
-def cancel_tracking(request: Request, body: CancelTrackingRequest) -> dict:
-    user = _require_user(request)
+def collect_cancel_secids(body: CancelTrackingRequest) -> list[str]:
     targets = list(body.secids)
     if body.secid:
         targets.append(body.secid)
-    removed = _tracking_services(request).commands.cancel(user.user_id, targets)
+    return targets
+
+
+@router.get("", response_model=TrackingOverviewResponse)
+def list_trackings(request: Request) -> TrackingOverviewResponse:
+    user = _require_user(request)
+    overview = require_tracking_services(request).query.execute(user.user_id)
+    return build_tracking_overview_response(overview)
+
+
+@router.post("/start")
+def start_tracking(request: Request, body: StartTrackingRequest) -> dict:
+    user = _require_user(request)
+    record = require_tracking_services(request).commands.start(user.user_id, body.secid)
+    return build_start_tracking_payload(record)
+
+
+@router.post("/cancel")
+def cancel_tracking(request: Request, body: CancelTrackingRequest) -> dict:
+    user = _require_user(request)
+    removed = require_tracking_services(request).commands.cancel(user.user_id, collect_cancel_secids(body))
     return {"ok": True, "removed": removed}

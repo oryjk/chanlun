@@ -9,6 +9,7 @@ from ..interfaces.api.app_auth_routes import router as app_auth_router
 from ..interfaces.api.app_tracking_routes import router as app_tracking_router
 from ..interfaces.api.error_handlers import register_error_handlers
 from ..interfaces.api.routes import router
+from ..interfaces.api.tracking_routes import router as tracking_router
 from .container import build_application
 from .env import load_dotenv_if_present
 from .settings import load_settings
@@ -52,6 +53,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(auth_router)
+app.include_router(tracking_router)
 app.include_router(app_auth_router)
 app.include_router(app_tracking_router)
 register_error_handlers(app)

@@ -94,7 +94,7 @@ class ClarityUiScreenshotTest {
     private fun outputDir(): File =
         File("build/outputs/clarity-screenshots").apply { mkdirs() }
 
-    private fun captureAllWindows(fileName: String, darkTheme: Boolean = false) {
+    private fun captureAllWindows(fileName: String, darkTheme: Boolean = false): Bitmap {
         composeRule.waitForIdle()
         val decorView = composeRule.activity.window.decorView
         val width = decorView.width.coerceAtLeast(780)
@@ -129,6 +129,7 @@ class ClarityUiScreenshotTest {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
         assertTrue("Screenshot missing or empty: $target", target.isFile && target.length() > 10_000L)
+        return bitmap
     }
 
     private fun sampleSnapshot(): MarketSnapshot {
@@ -176,6 +177,42 @@ class ClarityUiScreenshotTest {
             val dea = dif * 0.8
             MacdPoint(dif = dif, dea = dea, histogram = (dif - dea) * 2.0)
         }
+        val firstBuy = SignalPoint(
+            kind = 1,
+            side = "buy",
+            penId = 1,
+            candleIndex = 0,
+            time = candles[0].time,
+            price = candles[0].low,
+            confirmed = true,
+            reason = "趋势背驰一买",
+            invalidationPrice = candles[0].low,
+            sourceZoneId = 1,
+        )
+        val midSell = SignalPoint(
+            kind = 3,
+            side = "sell",
+            penId = 1,
+            candleIndex = 14,
+            time = candles[14].time,
+            price = candles[14].high,
+            confirmed = true,
+            reason = "中枢上方三卖",
+            invalidationPrice = candles[14].high,
+            sourceZoneId = 1,
+        )
+        val candidateBuy = SignalPoint(
+            kind = 3,
+            side = "buy",
+            penId = 3,
+            candleIndex = 36,
+            time = candles[36].time,
+            price = candles[36].low,
+            confirmed = false,
+            reason = "回抽接近中枢上沿候选三买",
+            invalidationPrice = 1496.0,
+            sourceZoneId = 1,
+        )
         val latestBuy = SignalPoint(
             kind = 2,
             side = "buy",
@@ -209,7 +246,7 @@ class ClarityUiScreenshotTest {
             signals = ChanSignals(
                 trendType = "consolidation",
                 divergences = listOf(Divergence("trend", "bullish", candles[28].time, candles[28].low, true)),
-                points = listOf(latestBuy),
+                points = listOf(firstBuy, midSell, candidateBuy, latestBuy),
             ),
             signalQuality = SignalQuality(
                 state = "confirmed",
@@ -352,7 +389,7 @@ class ClarityUiScreenshotTest {
     private fun sampleState(dark: Boolean = false): AppUiState {
         val stock = DefaultStocks.KWEICHOW_MOUTAI
         val snapshot = sampleSnapshot()
-        val buyPoint = snapshot.signals.points.first()
+        val buyPoint = snapshot.signals.points.last { it.confirmed && it.side == "buy" }
         val lastClose = snapshot.candles.last().close
         return AppUiState(
             stock = stock,
@@ -694,6 +731,155 @@ class ClarityUiScreenshotTest {
             }
         }
         captureAllWindows("detail_sheet_dark.png", darkTheme = true)
+    }
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w390dp-h844dp-xxhdpi")
+    fun renderDetailSheet3xHighDensityBadgesComplete() {
+        assertEquals(3f, composeRule.activity.resources.displayMetrics.density, 0.01f)
+        val state = sampleState(dark = false).copy(detailSheetOpen = true)
+        composeRule.setContent {
+            PreviewScaffold(darkTheme = false, tab = RootTab.MARKET) { m ->
+                MarketScreen(
+                    state = state,
+                    onSelectCategory = {},
+                    onToggleSort = {},
+                    onRefresh = {},
+                    onOpenAsset = {},
+                    onToggleTrack = {},
+                    onOpenSearch = {},
+                    modifier = m,
+                    applyStatusBarPadding = false,
+                )
+            }
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                ChanGuanTheme(darkTheme = false) {
+                    AssetDetailSheetHost(activeKey = state.stock.secid, onDismissRequest = { true }) { _, drag ->
+                        AssetDetailScreen(
+                            state = state,
+                            onBack = {},
+                            onSelectTimeframe = {},
+                            onToggleLayer = {},
+                            onRefresh = {},
+                            onOpenSearch = {},
+                            onOpenGlossary = {},
+                            onToggleTrack = {},
+                            dragHeaderModifier = drag.headerModifier(state.stock.secid),
+                            insideSheet = true,
+                        )
+                    }
+                }
+            }
+        }
+        val bitmap = captureAllWindows("detail_sheet_3x_light.png", darkTheme = false)
+
+        val scanTop = (bitmap.height * 0.24).toInt()
+        val scanBottom = (bitmap.height * 0.56).toInt()
+        val isRedPillPixel: (Int) -> Boolean = { px ->
+            val r = AndroidColor.red(px)
+            val g = AndroidColor.green(px)
+            val b = AndroidColor.blue(px)
+            r >= 185 && g in 40..115 && b in 40..115
+        }
+        val isGreenPillPixel: (Int) -> Boolean = { px ->
+            val r = AndroidColor.red(px)
+            val g = AndroidColor.green(px)
+            val b = AndroidColor.blue(px)
+            r <= 65 && g >= 115 && b in 75..140
+        }
+
+        val redPills = verifyIntactPills(bitmap, scanTop, scanBottom, isRedPillPixel)
+        val greenPills = verifyIntactPills(bitmap, scanTop, scanBottom, isGreenPillPixel)
+        assertTrue("Expected >= 2 intact red buy pills (B1, B2) at 3x, found $redPills", redPills >= 2)
+        assertTrue("Expected >= 1 intact green sell pill (S3) at 3x, found $greenPills", greenPills >= 1)
+    }
+
+    private fun verifyIntactPills(
+        bitmap: Bitmap,
+        scanTop: Int,
+        scanBottom: Int,
+        matchesColor: (Int) -> Boolean,
+    ): Int {
+        val w = bitmap.width
+        val hBand = (scanBottom - scanTop + 1).coerceAtLeast(1)
+        val visited = BooleanArray(w * hBand)
+        val queue = IntArray(w * hBand)
+        var verifiedCount = 0
+
+        for (y0 in scanTop..scanBottom) {
+            for (x0 in 0 until w) {
+                val startKey = (y0 - scanTop) * w + x0
+                if (visited[startKey] || !matchesColor(bitmap.getPixel(x0, y0))) continue
+                visited[startKey] = true
+                var head = 0
+                var tail = 0
+                queue[tail++] = startKey
+                var minX = x0
+                var maxX = x0
+                var minY = y0
+                var maxY = y0
+                while (head < tail) {
+                    val cur = queue[head++]
+                    val cy = scanTop + cur / w
+                    val cx = cur % w
+                    if (cx < minX) minX = cx
+                    if (cx > maxX) maxX = cx
+                    if (cy < minY) minY = cy
+                    if (cy > maxY) maxY = cy
+                    for (dy in -1..1) {
+                        val ny = cy + dy
+                        if (ny < scanTop || ny > scanBottom) continue
+                        for (dx in -1..1) {
+                            val nx = cx + dx
+                            if (nx < 0 || nx >= w) continue
+                            val nk = (ny - scanTop) * w + nx
+                            if (!visited[nk] && matchesColor(bitmap.getPixel(nx, ny))) {
+                                visited[nk] = true
+                                queue[tail++] = nk
+                            }
+                        }
+                    }
+                }
+                val boxW = maxX - minX + 1
+                val boxH = maxY - minY + 1
+                if (boxW < 40 || boxH < 24) continue
+
+                val whiteRows = mutableListOf<Int>()
+                for (y in minY..maxY) {
+                    var rowLeftMatch = Int.MAX_VALUE
+                    var rowRightMatch = Int.MIN_VALUE
+                    for (x in minX..maxX) {
+                        if (matchesColor(bitmap.getPixel(x, y))) {
+                            if (x < rowLeftMatch) rowLeftMatch = x
+                            if (x > rowRightMatch) rowRightMatch = x
+                        }
+                    }
+                    if (rowLeftMatch + 2 >= rowRightMatch) continue
+                    var rowHasEnclosedWhite = false
+                    for (x in (rowLeftMatch + 1) until rowRightMatch) {
+                        val px = bitmap.getPixel(x, y)
+                        if (AndroidColor.red(px) >= 210 &&
+                            AndroidColor.green(px) >= 210 &&
+                            AndroidColor.blue(px) >= 210
+                        ) {
+                            rowHasEnclosedWhite = true
+                            break
+                        }
+                    }
+                    if (rowHasEnclosedWhite) whiteRows.add(y)
+                }
+                if (whiteRows.isEmpty()) continue
+
+                assertTrue("3x pill height too small ($boxH px) for [$minX..$maxX, $minY..$maxY]", boxH >= 40)
+                assertTrue("Glyph clipped at top edge (white starts at ${whiteRows.first()} vs pill top $minY)", whiteRows.first() >= minY + 2)
+                assertTrue("Glyph clipped at bottom edge (white ends at ${whiteRows.last()} vs pill bottom $maxY)", whiteRows.last() <= maxY - 2)
+                val midY = (minY + maxY) / 2
+                assertTrue("Glyph missing from upper pill half ($minY..$midY)", whiteRows.any { it < midY })
+                assertTrue("Glyph missing from lower pill half ($midY..$maxY)", whiteRows.any { it > midY })
+                verifiedCount++
+            }
+        }
+        return verifiedCount
     }
 
     @Test

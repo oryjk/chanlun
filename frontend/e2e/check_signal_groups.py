@@ -91,17 +91,11 @@ def main():
 
                 page.route('**/api/**', api)
                 page.goto(args.base_url + '/?view=rankings', wait_until='domcontentloaded')
-                confirmed = page.locator('.ranking-card.bullish [data-group="confirmed"]')
-                observation = page.locator('.ranking-card.bullish [data-group="observation"]')
+                confirmed = page.locator('.ranking-list-section.bullish[data-group="confirmed"]')
                 confirmed.locator('.ranking-row').first.wait_for()
+                assert page.locator('.point-confirm-tag').count() == 0
                 assert confirmed.locator('.ranking-row').count() == 10
-                assert confirmed.locator('.point-confirm-tag.pending').count() == 0
                 assert '距结构端点 171 根已收盘 K 线（日线）' in confirmed.locator('.ranking-row').first.inner_text()
-                assert observation.locator('.point-confirm-tag.pending').count() == 1
-                assert '买点结构已失效' in observation.inner_text()
-                assert '首次越界 2026-09-15，收盘价 8.80' in observation.inner_text()
-                assert '价格恢复不重用该信号' in observation.inner_text()
-                assert '买点结构端点' in observation.inner_text()
                 assert '可关注买入' not in page.locator('main').inner_text()
                 assert page.locator('.ranking-update-time time').inner_text() == '2026-11-09 15:49'
                 assert '首次识别及确认时间尚未追溯' in page.locator('.ranking-status').inner_text()
@@ -109,9 +103,21 @@ def main():
                 page.screenshot(path=str(out / f'signals-{width}.png'))
                 confirmed.get_by_role('button', name='展开更多', exact=False).click()
                 assert confirmed.locator('.ranking-row').count() == 12
+
+                # 切换到「候选观察」下划线标签
+                page.get_by_role('tab', name='候选观察', exact=False).click()
+                observation = page.locator('.ranking-list-section.bullish[data-group="observation"]')
+                observation.locator('.ranking-row').first.wait_for()
+                assert page.locator('.point-confirm-tag').count() == 0
+                assert '买点结构已失效' in observation.inner_text()
+                assert '首次越界 2026-09-15，收盘价 8.80' in observation.inner_text()
+                assert '价格恢复不重用该信号' in observation.inner_text()
+                assert '买点结构端点' in observation.inner_text()
+
                 page.get_by_role('searchbox', name='搜索榜单证券').fill('观察测试')
-                assert confirmed.locator('.ranking-row').count() == 0
                 assert observation.locator('.ranking-row').count() == 1
+                page.get_by_role('tab', name='已确认同向', exact=False).click()
+                assert confirmed.locator('.ranking-row').count() == 0
                 assert '未匹配' in confirmed.inner_text()
                 page.get_by_role('button', name='清空', exact=True).click()
                 assert confirmed.locator('.ranking-row').count() == 10
@@ -141,9 +147,11 @@ def main():
                 page.get_by_role('button', name='刷新榜单', exact=True).click()
                 page.get_by_text('当前为旧版快照，辅助证据尚未计算，暂列观察组，等待后台更新。', exact=True).wait_for()
                 assert confirmed.locator('.ranking-row').count() == 0
-                assert observation.locator('.ranking-row').count() == 10
                 assert '候选不会补入此组' in confirmed.inner_text()
-                page.goto(args.base_url + '/?view=market&timeframe=1d', wait_until='domcontentloaded')
+                page.get_by_role('tab', name='候选观察', exact=False).click()
+                assert observation.locator('.ranking-row').count() == 10
+
+                page.goto(args.base_url + '/?secid=1.600519&view=detail&timeframe=1d', wait_until='domcontentloaded')
                 panel = page.locator('.signal-detail')
                 panel.get_by_role('heading', name='候选，等待确认', exact=True).wait_for()
                 assert panel.get_by_role('heading', name='已确认结构', exact=True).count() == 1

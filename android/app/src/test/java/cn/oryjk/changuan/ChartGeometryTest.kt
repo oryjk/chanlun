@@ -2,6 +2,8 @@ package cn.oryjk.changuan
 
 import cn.oryjk.changuan.domain.ChartViewport
 import cn.oryjk.changuan.domain.PriceProjection
+import cn.oryjk.changuan.domain.computeLabelPillBox
+import cn.oryjk.changuan.domain.computePointBadgeBox
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,5 +39,81 @@ class ChartGeometryTest {
         val y = projection.y(110.0)
         val roundTrip = projection.priceAt(y)
         assertEquals(110.0, roundTrip, 1e-6)
+    }
+
+    @Test
+    fun `badge boxes wrap full font metrics across 1x to 3_5x densities and stay inside bounds`() {
+        for (density in listOf(1f, 2f, 3f, 3.5f)) {
+            val textSize = 10f * density
+            val ascent = -0.92f * textSize
+            val descent = 0.24f * textSize
+            val padX = 5f * density
+            val padY = 2.5f * density
+            val gap = 7f * density
+            val tw = 16f * density
+            val minX = 8f * density
+            val maxX = 380f * density
+            val minY = 8f * density
+            val maxY = 210f * density
+
+            val buyBox = computePointBadgeBox(
+                anchorX = 60f * density,
+                anchorY = 120f * density,
+                isBelowAnchor = true,
+                textWidth = tw,
+                fontAscent = ascent,
+                fontDescent = descent,
+                padX = padX,
+                padY = padY,
+                anchorGap = gap,
+                minX = minX,
+                maxX = maxX,
+                minY = minY,
+                maxY = maxY,
+            )
+            assertEquals(buyBox.top + padY, buyBox.textBaselineY + ascent, 1e-3f)
+            assertEquals(buyBox.bottom - padY, buyBox.textBaselineY + descent, 1e-3f)
+            assertTrue(buyBox.top >= 120f * density + gap - 1e-3f)
+            assertTrue(buyBox.left >= minX && buyBox.right <= maxX)
+            assertTrue(buyBox.top >= minY && buyBox.bottom <= maxY)
+
+            val clampedSell = computePointBadgeBox(
+                anchorX = 2f * density,
+                anchorY = minY,
+                isBelowAnchor = false,
+                textWidth = tw,
+                fontAscent = ascent,
+                fontDescent = descent,
+                padX = padX,
+                padY = padY,
+                anchorGap = gap,
+                minX = minX,
+                maxX = maxX,
+                minY = minY,
+                maxY = maxY,
+            )
+            assertEquals(clampedSell.top + padY, clampedSell.textBaselineY + ascent, 1e-3f)
+            assertEquals(clampedSell.bottom - padY, clampedSell.textBaselineY + descent, 1e-3f)
+            assertTrue(clampedSell.left >= minX && clampedSell.right <= maxX)
+            assertTrue(clampedSell.top >= minY && clampedSell.bottom <= maxY)
+
+            val pill = computeLabelPillBox(
+                anchorLeft = maxX,
+                anchorTop = 40f * density,
+                textWidth = tw,
+                fontAscent = ascent,
+                fontDescent = descent,
+                padX = 4f * density,
+                padY = 2f * density,
+                minX = minX,
+                maxX = maxX,
+                minY = minY,
+                maxY = maxY,
+            )
+            assertEquals(pill.top + 2f * density, pill.textBaselineY + ascent, 1e-3f)
+            assertEquals(pill.bottom - 2f * density, pill.textBaselineY + descent, 1e-3f)
+            assertTrue(pill.left >= minX && pill.right <= maxX)
+            assertTrue(pill.top >= minY && pill.bottom <= maxY)
+        }
     }
 }

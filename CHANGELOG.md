@@ -1,5 +1,25 @@
 # 变更日志
 
+## 2026-11-17 · 1.2.4（versionCode 9）· 修复高分屏 K 线买卖点与中枢图标只显示一半的问题
+
+- 变更（图表密度缩放与基线居中修复）：
+  - 在 [ChartGeometry.kt](android/app/src/main/java/cn/oryjk/changuan/domain/ChartGeometry.kt) 新增纯 Kotlin 几何辅助 `ChartBadgeBox`、`computePointBadgeBox` 与 `computeLabelPillBox`，严格基于 `Paint.FontMetrics`（`ascent` / `descent`）、垂直间距与内边距统一计算图标包围盒和文字居中基线。
+  - 修复 [MarketChartCanvas.kt](android/app/src/main/java/cn/oryjk/changuan/presentation/charts/MarketChartCanvas.kt) 与 [RealtimeChartCanvas.kt](android/app/src/main/java/cn/oryjk/changuan/presentation/charts/RealtimeChartCanvas.kt) 中混用 `10f * density` 文字像素与硬编码裸像素框高（如 `boxH = 16f`、`boxTop + 12f`）导致 2x–3.5x 高分屏手机上确认买卖点（`B1` / `B2` / `S3`）、候选虚线框（`B3?`）及中枢徽标（`Z1` / `Z2` / `Z3?`）被裁切仅显示下半部分的问题；全量绘图线宽、虚线间隔、分型偏移、日期留白及图标间隙统一改用 `.dp.toPx()`，并在主图上下预留徽标安全净空且在深浅模式下均以高对比白色绘制已确认徽标文字。
+  - 在 [ChartGeometryTest.kt](android/app/src/test/java/cn/oryjk/changuan/ChartGeometryTest.kt) 与 [ClarityUiScreenshotTest.kt](android/app/src/test/java/cn/oryjk/changuan/ClarityUiScreenshotTest.kt) 增加 `1x`–`3.5x` 边界与基线单测及 `3.0x`（`w390dp-h844dp-xxhdpi`）像素级高分屏实图检验，并将 Android 版本升级至 `1.2.4`（`versionCode = 9`）。
+
+## 2026-11-17 · H5 前端全面迁移至严格模式 TypeScript（.ts / .tsx）
+
+- 变更（工程化配置与全局类型边界）：
+  - 新增 [frontend/tsconfig.json](frontend/tsconfig.json)（开启 `strict: true`、锁定 `target: ES2020` 在编译期静态禁止 `Array.prototype.at` 等旧版 WebView 不兼容语法，显式声明 `"types": ["bun", "node"]`）与 [frontend/src/vite-env.d.ts](frontend/src/vite-env.d.ts)（声明 Vite 环境变量及微信 JS-SDK 全局接口）；安装 `typescript`、`@types/react`、`@types/react-dom`、`@types/bun`。
+  - 在 [frontend/package.json](frontend/package.json) 新增 `typecheck` 脚本（`tsc --noEmit`）并将 `build` 升级为 `tsc --noEmit && vite build`；配置与入口同步迁移至 [frontend/vite.config.ts](frontend/vite.config.ts) 与 [frontend/index.html](frontend/index.html)（`/src/main.tsx`），保留 `frontend/dev/startup-diagnostics.js` 作为开发态普通 ES5 前置脚本。
+- 变更（整洁架构全量 `.ts` / `.tsx` 迁移与纯 TS 守卫）：
+  - `domain/`：新建 [frontend/src/domain/types.ts](frontend/src/domain/types.ts) 沉淀不可变领域接口与联合类型，全量迁移 `auth.ts`、`security.ts`、`timeframes.ts`、`marketHours.ts`、`quoteSeries.ts`、`market.ts`、`signals.ts`、`rankings.ts`、`tracking.ts` 及其单测。
+  - `application/`：新建 [frontend/src/application/ports.ts](frontend/src/application/ports.ts) 定义 `MarketGateway`、`AuthGateway`、`TrackingGateway`、`MiniProgramBridge`、`PreferencesStorage` 与 `AppUseCases` 端口契约，全量迁移 16 个读写用例。
+  - `infrastructure/` 与 `app/`：迁移 `httpClient.ts`、`marketGateway.ts`、`authGateway.ts`、`trackingGateway.ts`、`localPreferences.ts`、`miniProgramBridge.ts` 及唯一组合根 [frontend/src/app/container.ts](frontend/src/app/container.ts)。
+  - `presentation/`、`App.tsx` 与 `main.tsx`：迁移 `glossary.ts`、全部 10 个 Hooks、全部 19 个 TSX 组件（含 ECharts 严格类型选项与主题配色），并移除 `frontend/src/` 下全部历史 `.js`/`.jsx` 文件。
+  - [frontend/src/architecture.test.ts](frontend/src/architecture.test.ts) 与 [AGENTS.md](AGENTS.md) 同步更新，新增 `src uses TypeScript only` 自动化检查禁止 `.js`/`.jsx` 回流到源码目录。
+- 验证：完成 `bun run typecheck` 零错误、`bun test src`（58 项全通过）、根目录及 `/chanlun/` 双构建、`Playwright` 320px/375px/390px/600px/768px/1440px 与四列表对齐/模拟跟踪 E2E 验证，以及后端单元测试与 HTTP 冒烟验证。
+
 ## 2026-11-17 · 1.2.3（versionCode 8）· 全市场行情分页覆盖与 SQLite 20 日走势全量补齐/每日增量更新
 
 - 变更（后端全市场清单分页与 20 日走势落库增量同步）：
@@ -9,6 +29,18 @@
 - 变更（Android 原生端全市场真实总数与触底无感分页）：
   - `MarketGateway`、`AppViewModel` 与 `MarketScreen` 对接 `offset / limit / total / has_more`：表头展示全市场真实总数（沪深北 5900+ 只股票、境内 1600+ 只 ETF），首屏加载 100 条，列表触底自动无感续接下一页并按 `secid` 去重合并，切换分类/排序回到首行，打开详情抽屉返回保持原滚动位置；版本递增至 `1.2.3`（`versionCode = 8`）。
 - 验证：完成 backend 203 项单测、iOS Swift 语法校验、`./gradlew testDebugUnitTest assembleDebug`（0 Kotlin 警告）及 `:8000` 实盘全市场 SQLite 落库与接口验证。
+
+## 2026-11-17 · H5 对齐 Clarity 无卡片风格、四列对齐行情列表、模拟跟踪、榜单与邮箱登录
+
+- 变更（后端 H5 跟踪路由与隔离）：
+  - 新增 `backend/interfaces/api/tracking_routes.py`（`GET /api/tracking`、`POST /api/tracking/start`、`POST /api/tracking/cancel`），基于 `chanlun_session` HttpOnly Cookie 校验小程序登录用户并以 `h5:{user_id}` 命名空间复用 `NativeTrackingServices`，并在 `tests/test_market_assets_and_tracking.py` 补全隔离与鉴权 HTTP 测试。
+- 变更（H5 四栏导航与无卡片视觉重塑）：
+  - 一级导航重构为 `行情 / 跟踪 / 榜单 / 菜单` 四项（手机端固定底栏，桌面端融入顶栏），全站去除卡片套框与阴影，改用 `1px` 细分割线并新增 `:root[data-theme="dark"]` OLED 纯黑深色主题及 ECharts 深浅联动配色。
+  - **行情页**：改版为无卡片「股票 / ETF」实时行情列表，采用固定列宽语义化表头实现 `标的 / 成交额 / 涨跌幅 / 最新价`（桌面端含近20日走势）右侧像素级对齐，支持升/降序排序、书签快捷跟踪、零值中性 `0.00%`，点击进入多周期 K 线/分时结构详情页（支持 `?secid=...` 深链与 `← 返回`）。
+  - **跟踪页**：新增第 2 栏「跟踪」，复用 `¥10,000` 模拟本金记账、六档植物成长阶段图标与徽章（萌芽→年轮）、盈亏汇总条、`+ 跟踪` 搜索添加弹窗、排序/置顶/上下移动与批量结束管理。
+  - **榜单页**：采用顶部下划线 Tab 切换「已确认同向 / 候选观察」与「偏多 / 偏空」+ 板块筛选，移除行内冗余确认徽标并保证 4 字及以上证券名完整展示不截断。
+  - **菜单与邮箱认证**：新增「菜单」页（默认几何头像、跟随系统/浅色/深色 OLED 切换、跟踪角标入口、缠论术语解释）及邮箱验证码注册/密码登录窗口（浏览器环境默认展示并支持切换小程序链接，Bearer 会话与 Android 账号数据互通）。
+- 验证：完成 backend 200 项、frontend `bun test src` 57 项、`vite build` 根目录与 `/chanlun/` 双构建，以及 Playwright 320px/375px/390px/600px/768px/1440px 图表稳定、榜单规则、四列表头零偏差对齐及浅深色实机截图检查。
 
 ## 2026-11-17 · 1.2.2（versionCode 7）· 行情列表改为四列严格对齐布局（标的 / 成交额 / 涨跌幅 / 最新价）
 

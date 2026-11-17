@@ -41,7 +41,7 @@ backend/
 │   ├── cache/                 # K 线内存缓存与 SQLite 全市场行情资产及最近 25 日收盘增量缓存（`asset_catalog_cache.py`，`var/cache/` 不入库），不污染用例
 │   ├── persistence/           # 本地 JSON 报价存储、SQLite 榜单快照/租约/检查点、SQLite 用户跟踪存储（只读查询+独立写入）
 │   └── auth/                  # 报名系统网关（code 兑换身份、URL Link）与 HMAC 签名会话
-├── interfaces/api/            # FastAPI 路由（行情 routes.py、H5 登录 auth_routes.py、原生登录 app_auth_routes.py、原生跟踪 app_tracking_routes.py）、Pydantic DTO、异常映射
+├── interfaces/api/            # FastAPI 路由（行情 routes.py、H5 登录 auth_routes.py、H5 跟踪 tracking_routes.py、原生登录 app_auth_routes.py、原生跟踪 app_tracking_routes.py）、Pydantic DTO、异常映射
 └── app/                       # 组合根（container.py / tracking.py / app_auth.py）、环境配置 settings.py、应用启动与收盘榜单后台生命周期
 ```
 
@@ -54,9 +54,10 @@ backend/
 ### 登录与鉴权约定
 
 - H5 身份来自报名系统（`../registration_system`）小程序，不在 H5 自建账号：小程序 `pages/chanlun/index` 落地页默认登录后，以 web-view 打开缠观并带上一次性 `webview_code`（60 秒、单次有效）。原生 App 使用独立的 Apple 身份映射，见第七节。
-- 前端 `main.jsx` 渲染前取出并抹掉地址栏中的 `webview_code` 等桥接参数，交给 `POST /api/auth/webview-login`；后端用 code 调报名系统 `/auth/webview-codes/exchange` 换 JWT、再读 `/users/me`，然后签发缠观自己的 HttpOnly cookie `chanlun_session`（HMAC 签名、无状态、默认 30 天）。报名系统 JWT 不下发到前端。
-- 不登录也能使用全部行情功能。收藏、跟踪等个人功能必须通过 `useAuth().requireLogin(action)` 调用：已登录直接执行，游客弹出登录引导。
-- 登录引导按环境区分：小程序 web-view 内通过 `wx.miniProgram.redirectTo` 回到落地页登录并自动返回原页面；微信内浏览器或普通浏览器调 `GET /api/auth/mini-program-link` 获取报名系统生成的 URL Link。回跳参数只保留 `secid`、`timeframe`、`view`，且只允许 `[A-Za-z0-9._=&-]`，与小程序和报名系统规则一致。
+- 前端 `main.tsx` 渲染前取出并抹掉地址栏中的 `webview_code` 等桥接参数，交给 `POST /api/auth/webview-login`；后端用 code 调报名系统 `/auth/webview-codes/exchange` 换 JWT、再读 `/users/me`，然后签发缠观自己的 HttpOnly cookie `chanlun_session`（HMAC 签名、无状态、默认 30 天）。报名系统 JWT 不下发到前端。
+- 不登录也能使用全部行情与榜单功能。跟踪、收藏等个人功能必须通过 `useAuth().requireLogin(action)` 调用：已登录直接执行，游客弹出登录引导。
+- H5 模拟跟踪按登录渠道隔离持久化：小程序 `chanlun_session` Cookie 用户经 `/api/tracking*` 以 `h5:{user_id}` 命名空间读写；普通浏览器支持邮箱验证码注册与密码登录，经 `/api/app-auth/email/*` 获取 Bearer 会话并经 `/api/app-tracking*` 读写，与原生 Android 共用邮箱账户体系而与小程序 Cookie 会话完全隔离。
+- 登录引导按环境区分：小程序 web-view 内通过 `wx.miniProgram.redirectTo` 回到落地页登录并自动返回原页面；微信内浏览器或普通浏览器支持邮箱登录注册及切换 `GET /api/auth/mini-program-link` 获取报名系统生成的 URL Link。回跳参数只保留 `secid`、`timeframe`、`view`，且只允许 `[A-Za-z0-9._=&-]`，与小程序和报名系统规则一致。
 - URL Link 只能指向已发布小程序版本中存在的页面，新版小程序发布前该接口返回 502。
 
 ### 缠论买卖点约定
@@ -94,41 +95,44 @@ backend/
 
 ## 三、前端目录与职责
 
+H5 前端全面采用严格模式 TypeScript（`.ts` / `.tsx`，`strict: true`、`target: ES2020`），`frontend/tsconfig.json` 与 `frontend/src/vite-env.d.ts` 定义编译边界；`frontend/dev/startup-diagnostics.js` 因在应用模块加载前由 Vite 原样注入捕获旧版 WebView 启动错误而保持普通 ES5 JS。
+
 ```text
 frontend/src/
-├── domain/                    # 纯领域定义、证券标识规范化、选择器、交易时段和分时序列合并等业务规则
-├── application/               # 股票搜索、快照与报价读取等查询用例，报价采样写入用例，会话查询、code 登录与登录引导用例
+├── domain/                    # 纯领域类型（types.ts）、证券标识规范化、选择器、交易时段、分时合并与模拟跟踪规则
+├── application/               # 端口契约（ports.ts）、市场资产/快照/报价/榜单/跟踪等只读查询用例，写命令用例与偏好用例
 ├── infrastructure/
-│   ├── api/                   # fetch、HTTP 错误、DTO 转换和 Gateway（行情、登录）
+│   ├── api/                   # fetch、HTTP 错误、DTO 转换和 Gateway（行情、跟踪、登录/邮箱认证）
+│   ├── storage/               # localStorage 外观模式、邮箱 Bearer 令牌与跟踪偏好持久化
 │   └── wechat/                # 微信 JS-SDK 桥接（web-view 内跳回小程序）
 ├── presentation/
-│   ├── components/            # 渲染和用户交互（含 AuthContext 登录状态、账号标识与登录引导弹窗）
-│   ├── hooks/                 # 请求生命周期、加载状态、防抖、URL 路由同步、实时轮询等交互状态
-│   └── glossary.js            # 术语说明文案
-├── app/container.js           # 前端唯一依赖装配位置
-├── App.jsx                    # 展示层页面编排
-└── main.jsx                   # 取出 web-view 桥接参数、识别运行环境、用例注入与 React 启动
+│   ├── components/            # 无卡片极简分割线 TSX 组件与页面（行情四列表格、模拟跟踪、榜单、菜单与默认头像、AuthContext 与登录弹窗、K 线与分时图）
+│   ├── hooks/                 # 请求生命周期、加载状态、防抖、URL 路由同步（market/detail/tracking/rankings/menu）、深浅主题与实时轮询状态
+│   └── glossary.ts            # 术语说明文案
+├── app/container.ts           # 前端唯一依赖装配位置
+├── App.tsx                    # 展示层四栏导航与详情视图编排
+└── main.tsx                   # 取出 web-view 桥接参数、识别运行环境、用例注入与 React 启动
 ```
 
 ### 前端读写分离
 
 - React 组件和 Hooks 不得直接调用 `fetch`，必须调用 `application` 用例。
-- 查询统一通过只读 Gateway 方法；写操作（当前为 `recordQuoteSample`）使用独立 Command 用例和写入 Gateway 方法，不得伪装成查询。未来新增收藏、配置保存等写操作同样处理。
+- 查询统一通过只读 Gateway 方法；写操作（`recordQuoteSample`、`startTracking`、`cancelTrackings`）使用独立 Command 用例和写入 Gateway 方法，不得伪装成查询。
 - `infrastructure/api` 是 API DTO 边界，第三方字段不得散落到组件中。
 - 展示组件可以负责本地 UI 状态，但行情统计和可复用业务判断应放入 `domain`，请求编排应放入 `application` 或展示 Hooks。
-- 新增用例在 `frontend/src/app/container.js` 装配并注入，不允许组件直接实例化基础设施。
+- 新增用例在 `frontend/src/app/container.ts` 装配并注入，不允许组件直接实例化基础设施。
 
 ### 前端视觉规范
 
-界面按国内行情软件的习惯设计，是给交易者用的分析工具，不做营销页式的装饰。颜色与尺寸统一使用 `frontend/src/styles.css` 顶部的变量，新增界面不得另起一套配色。
+界面对齐策略货架 Clarity 无卡片极简细分割线设计体系，保持国内专业交易分析工具的克制观感，同时兼容浅色与 OLED 纯黑深色模式（跟随系统 / 浅色 / 深色）。颜色与尺寸统一使用 `frontend/src/styles.css` 顶部变量（`:root` 与 `:root[data-theme="dark"]`）。
 
-- 配色：白色内容面 `--sheet`，冷灰分隔色 `--page` `#eef0f2`；墨蓝 `--accent` `#2e4a6e` 是唯一主色，用于选中、链接和主按钮。红 `--up` / 绿 `--down` 只表示涨跌与买卖点，不得用作主色或装饰色。图表语义色固定：金色 `--gold` 为笔，墨蓝为线段，紫色 `--violet` 为笔中枢，蓝灰为分型。ECharts 配置中的颜色与上述变量保持一致。
-- 版式：手机端整页白底、内容通栏，区块之间用 8px `--page` 色带分隔，列表行用 1px `--line` 细线；不使用漂浮卡片和投影。桌面端为带 1px 边框的白色面板，同样不加投影。只有弹层（搜索结果、术语说明、登录引导）使用 `--overlay-shadow`。
+- 配色：浅色白色内容面 `--sheet` `#ffffff`，次级面 `--sunken` `#f5f6f8`，分割线 `--line` `#e3e6ea`；深色 OLED 纯黑 `--sheet` `#000000`，次级面 `--sunken` `#16181c`，分割线 `--line` `#2f3336`。墨蓝 `--accent`（浅色 `#2e4a6e` / 深色 `#5e89c0`）是唯一主色，用于选中、链接和主按钮。红 `--up` / 绿 `--down` 只表示涨跌与买卖点，零涨跌（`< 0.005%`）使用中性 `--text-secondary` 显示 `0.00%`（严禁显示红色 `+0.00%`）。图表语义色固定：金色 `--gold` 为笔，墨蓝为线段，紫色 `--violet` 为笔中枢，蓝灰为分型；ECharts 配置随 `resolvedTheme` 联动。
+- 版式：一级导航固定为四栏「行情 / 跟踪 / 榜单 / 菜单」（手机 `< 768px` 固定底栏，桌面 `>= 768px` 融入顶栏）；全站统一使用无卡片纯色内容面与 `1px solid var(--line)` 细分割线，不使用漂浮卡片和投影。只有弹层（搜索结果、术语说明、登录引导、添加跟踪弹窗）使用 `--overlay-shadow`。「行情」页使用固定列宽语义化四列表格（桌面端含近20日走势列），保证 `标的 / 成交额 / 涨跌幅 / 最新价` 表头与单元格右侧零偏差对齐；「榜单」页顶部下划线切换「已确认同向 / 候选观察」，行内不展示冗余确认徽标并确保 4 字及以上证券名完整显示。
 - 控件：圆角只用于小控件（`--radius` 4px），面板最多 6px；不使用胶囊形按钮或标签。周期切换用文字标签加短下划线；图层开关画出各自在图上的笔触作为图例。
 - 层级靠字重、字号与留白表达：正文 13–15px，区块标题 15–16px 600，价格 700 并使用 `tabular-nums`；不用浅色底提示块、带底色的图标方块或"大数字 + 小标签"统计卡片。
 - 文案：不用"A · B · C"中点拼接，并列信息用空格分隔或用逗号写成一句话；不用全大写标签。按钮写明动作，空状态和错误提示说明发生了什么、下一步怎么做。
 - 榜单日期：顶部突出榜单收盘日期及完整更新时间（明确标注北京时间）；列表和图表买卖点日期标为结构端点日期，不等于当日已知信号。候选与已确认分组，首次识别和确认时间未追溯时直说未知；相对涨跌标注比较端点价，和行情截止日期分开表达。
-- 价格统一通过 `domain/market.js` 的 `formatPrice` 格式化，位数由 `getPriceDecimals(stock)` 决定：股票 2 位，ETF（`market === 'ETF'`）3 位；不在组件中直接 `toFixed`。
+- 价格统一通过 `domain/market.ts` 的 `formatPrice` 格式化，位数由 `getPriceDecimals(stock)` 决定：股票 2 位，ETF（`market === 'ETF'`）3 位；不在组件中直接 `toFixed`。
 - 图表上的文字标签（如笔中枢名称）需单独成层绘制在最上方，不得被 K 线和笔遮挡。
 - 修改视觉规范时同步更新本节，并在手机（390px）与桌面（1440px）宽度下截图检查。
 
@@ -143,12 +147,12 @@ frontend/src/
 
 ## 五、变更检查
 
-修改架构或目录职责时必须同步更新本文件；分层依赖由 `tests/test_architecture.py` 与 `frontend/src/architecture.test.js` 自动检查。完成变更后至少执行：
+修改架构或目录职责时必须同步更新本文件；分层依赖由 `tests/test_architecture.py` 与 `frontend/src/architecture.test.ts` 自动检查。完成变更后至少执行：
 
 ```bash
 uv run python -m unittest discover -s tests
 uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
-cd frontend && bun test src && bun run build
+cd frontend && bun run typecheck && bun test src && bun run build
 ```
 
 并通过真实 HTTP 请求验证股票与 ETF 搜索、四周期行情与买卖点、多级别联立、榜单、实时报价与采样写入、一次性 code 登录与游客会话、跨域响应头和错误响应；不得仅以导入成功或构建成功代替端到端验证。

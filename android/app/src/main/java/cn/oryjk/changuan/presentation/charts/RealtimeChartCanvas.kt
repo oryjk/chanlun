@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.dp
 import cn.oryjk.changuan.domain.MarketFormat
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketTime
@@ -43,11 +44,13 @@ fun RealtimeChartCanvas(
     Canvas(modifier = modifier) {
         val w = size.width.toDouble()
         val h = size.height.toDouble()
-        val padH = 12.0
-        val top = 16.0
-        val plotH = max(24.0, h - 42.0)
+        val padH = 8.dp.toPx().toDouble()
+        val top = 8.dp.toPx().toDouble()
+        val footerH = 18.dp.toPx().toDouble()
+        val plotH = max(24.dp.toPx().toDouble(), h - top - footerH)
         val plotW = max(1.0, w - padH * 2)
-        val dashed = PathEffect.dashPathEffect(floatArrayOf(6f, 5f), 0f)
+        val dashed = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()), 0f)
+        val guideStroke = 0.85.dp.toPx()
 
         val session = MarketTime.session(stock)
         val duration = max(1.0, session.duration)
@@ -75,7 +78,7 @@ fun RealtimeChartCanvas(
                 color = palette.cardBorder,
                 start = Offset(midX, top.toFloat()),
                 end = Offset(midX, (top + plotH).toFloat()),
-                strokeWidth = 1f,
+                strokeWidth = guideStroke,
                 pathEffect = dashed,
             )
         }
@@ -86,7 +89,7 @@ fun RealtimeChartCanvas(
                 color = palette.inkMuted.copy(alpha = 0.65f),
                 start = Offset(padH.toFloat(), prevY),
                 end = Offset((w - padH).toFloat(), prevY),
-                strokeWidth = 1.2f,
+                strokeWidth = guideStroke,
                 pathEffect = dashed,
             )
         }
@@ -131,35 +134,36 @@ fun RealtimeChartCanvas(
             drawPath(
                 path = path,
                 color = lineColor,
-                style = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
             )
         }
 
-        val density = drawContext.density.density
-        textPaint.textSize = 10f * density
+        textPaint.textSize = 10.dp.toPx()
+        val fm = textPaint.fontMetrics
         textPaint.color = palette.inkMuted.toArgb()
         drawContext.canvas.nativeCanvas.drawText(
             MarketFormat.price(projection.maximum, stock.decimals),
-            (padH + 4).toFloat(),
-            (top + 12).toFloat(),
+            (padH + 3.dp.toPx()).toFloat(),
+            top.toFloat() + 2.dp.toPx() - fm.ascent,
             textPaint,
         )
         drawContext.canvas.nativeCanvas.drawText(
             MarketFormat.price(projection.minimum, stock.decimals),
-            (padH + 4).toFloat(),
-            (top + plotH - 4).toFloat(),
+            (padH + 3.dp.toPx()).toFloat(),
+            (top + plotH).toFloat() - 2.dp.toPx() - fm.descent,
             textPaint,
         )
 
         val axisLabels = MarketTime.axisLabels(stock)
+        val axisBaseline = h.toFloat() - 2.dp.toPx() - fm.descent
         axisLabels.forEach { (label, ratio) ->
             val tw = textPaint.measureText(label)
             val x = ((padH + ratio * plotW) - tw * ratio).toFloat()
-                .coerceIn(padH.toFloat(), (w - padH - tw).toFloat())
+                .coerceIn(padH.toFloat(), max(padH.toFloat(), (w - padH - tw).toFloat()))
             drawContext.canvas.nativeCanvas.drawText(
                 label,
                 x,
-                (h - 4).toFloat(),
+                axisBaseline,
                 textPaint,
             )
         }
@@ -185,14 +189,16 @@ fun RankingSparklineCanvas(
         val h = size.height.toDouble()
         val markers = listOfNotNull(entry.buyPoint, entry.sellPoint)
         val prices = trend.map { it.price } + markers.map { it.price }
+        val hInset = 6.dp.toPx().toDouble()
+        val vInset = 14.dp.toPx().toDouble()
         val projection = PriceProjection(
             minimum = prices.minOrNull() ?: 0.0,
             maximum = prices.maxOrNull() ?: 1.0,
-            top = 14.0,
-            height = max(12.0, h - 28.0),
+            top = vInset,
+            height = max(12.dp.toPx().toDouble(), h - vInset * 2.0),
         )
         fun xAt(index: Int): Float =
-            (index.toDouble() / max(1, trend.size - 1).toDouble() * max(1.0, w - 12.0) + 6.0).toFloat()
+            (index.toDouble() / max(1, trend.size - 1).toDouble() * max(1.0, w - hInset * 2.0) + hInset).toFloat()
 
         val lineColor = palette.primaryBrand
         val path = Path()
@@ -204,11 +210,14 @@ fun RankingSparklineCanvas(
         drawPath(
             path = path,
             color = lineColor,
-            style = Stroke(width = 1.8f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
 
-        val density = drawContext.density.density
-        textPaint.textSize = 9.5f * density
+        textPaint.textSize = 9.5.dp.toPx()
+        val fm = textPaint.fontMetrics
+        val markerRadius = 2.8.dp.toPx()
+        val textEdgePad = 2.dp.toPx()
+        val vPad = 1.dp.toPx()
         markers.forEach { marker ->
             val nearestIdx = trend.indices.minByOrNull { idx ->
                 abs(trend[idx].time.epochSecond - marker.time.epochSecond)
@@ -218,15 +227,15 @@ fun RankingSparklineCanvas(
             val color = if (marker.side == "buy") palette.positiveRed else palette.negativeGreen
             drawCircle(
                 color = color,
-                radius = 3.5f,
+                radius = markerRadius,
                 center = Offset(mx, my),
             )
             val title = "${if (marker.side == "buy") "买" else "卖"} ${
                 MarketFormat.price(marker.price, entry.stock.decimals)
             } ${MarketTime.formatDate(marker.time, "MM-dd")}"
             val tw = textPaint.measureText(title)
-            val tx = (mx - tw / 2f).coerceIn(4f, max(4f, w.toFloat() - tw - 4f))
-            val ty = if (marker.side == "buy") h.toFloat() - 3f else 11f
+            val tx = (mx - tw / 2f).coerceIn(textEdgePad, max(textEdgePad, w.toFloat() - tw - textEdgePad))
+            val ty = if (marker.side == "buy") h.toFloat() - vPad - fm.descent else vPad - fm.ascent
             textPaint.color = color.toArgb()
             drawContext.canvas.nativeCanvas.drawText(title, tx, ty, textPaint)
         }

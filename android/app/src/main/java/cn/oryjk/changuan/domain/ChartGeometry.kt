@@ -75,3 +75,111 @@ data class ChartLayers(
     val zhongshu: Boolean = true,
     val points: Boolean = true,
 )
+
+data class ChartBadgeBox(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val height: Float,
+    val textX: Float,
+    val textBaselineY: Float,
+) {
+    val right: Float
+        get() = left + width
+
+    val bottom: Float
+        get() = top + height
+}
+
+private fun buildBadgeBox(
+    rawLeft: Float,
+    rawTop: Float,
+    textWidth: Float,
+    fontAscent: Float,
+    fontDescent: Float,
+    padX: Float,
+    padY: Float,
+    minX: Float,
+    maxX: Float,
+    minY: Float,
+    maxY: Float,
+): ChartBadgeBox {
+    val glyphHeight = fontDescent - fontAscent
+    val width = textWidth + padX * 2f
+    val height = glyphHeight + padY * 2f
+    val left = rawLeft.coerceIn(minX, max(minX, maxX - width))
+    val top = rawTop.coerceIn(minY, max(minY, maxY - height))
+    val textX = left + padX
+    val textBaselineY = top + height / 2f - (fontAscent + fontDescent) / 2f
+    return ChartBadgeBox(
+        left = left,
+        top = top,
+        width = width,
+        height = height,
+        textX = textX,
+        textBaselineY = textBaselineY,
+    )
+}
+
+fun computePointBadgeBox(
+    anchorX: Float,
+    anchorY: Float,
+    isBelowAnchor: Boolean,
+    textWidth: Float,
+    fontAscent: Float,
+    fontDescent: Float,
+    padX: Float,
+    padY: Float,
+    anchorGap: Float,
+    minX: Float,
+    maxX: Float,
+    minY: Float,
+    maxY: Float,
+): ChartBadgeBox {
+    val height = (fontDescent - fontAscent) + padY * 2f
+    val width = textWidth + padX * 2f
+    val rawLeft = anchorX - width / 2f
+    val rawTop = if (isBelowAnchor) anchorY + anchorGap else anchorY - anchorGap - height
+    return buildBadgeBox(
+        rawLeft = rawLeft,
+        rawTop = rawTop,
+        textWidth = textWidth,
+        fontAscent = fontAscent,
+        fontDescent = fontDescent,
+        padX = padX,
+        padY = padY,
+        minX = minX,
+        maxX = maxX,
+        minY = minY,
+        maxY = maxY,
+    )
+}
+
+fun computeLabelPillBox(
+    anchorLeft: Float,
+    anchorTop: Float,
+    textWidth: Float,
+    fontAscent: Float,
+    fontDescent: Float,
+    padX: Float,
+    padY: Float,
+    minX: Float,
+    maxX: Float,
+    minY: Float,
+    maxY: Float,
+): ChartBadgeBox {
+    val height = (fontDescent - fontAscent) + padY * 2f
+    return buildBadgeBox(
+        rawLeft = anchorLeft,
+        rawTop = anchorTop - height,
+        textWidth = textWidth,
+        fontAscent = fontAscent,
+        fontDescent = fontDescent,
+        padX = padX,
+        padY = padY,
+        minX = minX,
+        maxX = maxX,
+        minY = minY,
+        maxY = maxY,
+    )
+}
