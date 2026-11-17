@@ -38,7 +38,7 @@ backend/
 ├── infrastructure/
 │   ├── http/                  # 通用传输客户端
 │   ├── market/                # 东方财富 K 线、实时报价、分时、搜索、候选池与资产清单适配器；新浪备用 K 线（前复权）、实时/批量报价、证券清单与资产清单，以及主备切换装饰器（主源连续失败时短时熔断）
-│   ├── cache/                 # K 线内存缓存与 SQLite 最近活跃行情资产缓存（`asset_catalog_cache.py`，`var/cache/` 不入库），不污染用例
+│   ├── cache/                 # K 线内存缓存与 SQLite 全市场行情资产及最近 25 日收盘增量缓存（`asset_catalog_cache.py`，`var/cache/` 不入库），不污染用例
 │   ├── persistence/           # 本地 JSON 报价存储、SQLite 榜单快照/租约/检查点、SQLite 用户跟踪存储（只读查询+独立写入）
 │   └── auth/                  # 报名系统网关（code 兑换身份、URL Link）与 HMAC 签名会话
 ├── interfaces/api/            # FastAPI 路由（行情 routes.py、H5 登录 auth_routes.py、原生登录 app_auth_routes.py、原生跟踪 app_tracking_routes.py）、Pydantic DTO、异常映射
@@ -175,7 +175,7 @@ cd frontend && bun test src && bun run build
 ## 八、原生 Android（手机与平板）
 
 - `android/` 使用 100% Kotlin（`2.0.21`）+ Jetpack Compose（`Compose BOM 2024.12.01`）+ 原生 `Canvas` K 线/分时图表，`compileSdk = 35`、`minSdk = 26`，同一应用自适应手机（底部导航 `行情 / 跟踪 / 榜单 / 菜单` 4 项、单列布局）与平板/横屏宽屏（左侧导航栏）。视觉严格对齐策略货架 X × TradingView 无卡片极简细分割线（`0.5dp`）风格与 OLED 纯黑深色模式（`backgroundCanvas = #000000`、`cardSurface = #000000`、`subtleSurface = #16181C`、`cardBorder = #2F3336`，`RobotoCondensed` `tnum` 等宽数字），支持系统 / 浅色 / 深色三种外观切换；「菜单」页内置 API 服务环境切换，默认使用 `开发环境（AI外网）`（`https://ai.oryjk.cn:82/chanlun-dev/`），并可选 `开发环境（233内网）`（`http://172.16.60.233:8000/`）与 `生产环境`（`https://match.oryjk.cn/chanlun/`），各环境登录会话按环境隔离持久化。`android/README.md` 记录构建与邮箱登录配置步骤。
-- 行情与详情交互流程：**行情** Tab 为无卡片「股票 / ETF」双分类四列对齐实时列表（`标的 / 成交额 / 涨跌幅 / 最新价` 表头与单元格严格右对齐、支持排序、书签快捷跟踪），点击任一标的或搜索结果在无卡片全屏上推抽屉 `AssetDetailSheetHost`（`AssetDetailScreen`）中打开多周期 K 线/分时与缠论结构详情并支持底部一键 `+ 跟踪 / 跟踪中`，返回时保持原列表滚动位置；**跟踪** Tab 对应策略货架模拟跟踪（每只 ¥10,000 模拟本金记账、6 档成长阶段徽章「萌芽 → 年轮」、汇总指标、置顶/排序/批量管理，`GET /api/app-tracking`、`POST /api/app-tracking/start`、`POST /api/app-tracking/cancel`）；**榜单** Tab 使用顶部下划线分段切换已确认同向与候选观察，列表行内不重复展示已确认/候选徽标且名称列保留足够宽度确保 4 字以内资产名完整展示不截断。
+- 行情与详情交互流程：**行情** Tab 为无卡片「股票 / ETF」双分类四列对齐实时列表（覆盖全市场沪深北 A 股与境内 ETF，支持 `offset/limit` 触底无感分页与真实总数展示，停牌股排在活跃股末尾，`标的 / 成交额 / 涨跌幅 / 最新价` 表头与单元格严格右对齐、支持排序、书签快捷跟踪；后端 SQLite 后台批量补齐并每日增量更新全部标的近 20 日收盘走势），点击任一标的或搜索结果在无卡片全屏上推抽屉 `AssetDetailSheetHost`（`AssetDetailScreen`）中打开多周期 K 线/分时与缠论结构详情并支持底部一键 `+ 跟踪 / 跟踪中`，返回时保持原列表滚动位置；**跟踪** Tab 对应策略货架模拟跟踪（每只 ¥10,000 模拟本金记账、6 档成长阶段徽章「萌芽 → 年轮」、汇总指标、置顶/排序/批量管理，`GET /api/app-tracking`、`POST /api/app-tracking/start`、`POST /api/app-tracking/cancel`）；**榜单** Tab 使用顶部下划线分段切换已确认同向与候选观察，列表行内不重复展示已确认/候选徽标且名称列保留足够宽度确保 4 字以内资产名完整展示不截断。
 - 原生 Android 同样遵循 `Presentation -> Application -> Domain`，`Infrastructure` 实现读写/身份/环境/更新端口，`App`（`AppContainer.kt`）是唯一组合根。`domain` 与 `application` 不导入 `android.*`、`androidx.*`、`okhttp3.*` 或 `com.google.gson.*`，`presentation` 不导入 `infrastructure`，由 `android/app/src/test/java/cn/oryjk/changuan/ArchitectureTest.kt` 自动守护。
 - Android 端登录采用 **账号密码登录 + 邮箱验证码注册**（游客可使用全部行情与榜单功能）：
   - `POST /api/app-auth/email/code`：校验未注册邮箱并发送 6 位数字验证码（10 分钟有效、60 秒发送冷却，最多校验 5 次）。

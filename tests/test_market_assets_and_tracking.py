@@ -114,13 +114,17 @@ class _StubCatalogReader:
         self._error = error
         self._as_of_date = as_of_date
 
-    def list_assets(self, category, *, sort_field, descending, limit):
+    def list_assets(self, category, *, sort_field, descending, limit, offset=0):
         if self._error:
             raise self._error
+        page = self._items[offset : offset + limit]
         return MarketAssetList(
             category=category,
             as_of_date=self._as_of_date,
-            items=self._items[:limit],
+            items=page,
+            total=len(self._items),
+            offset=offset,
+            has_more=offset + len(page) < len(self._items),
         )
 
 

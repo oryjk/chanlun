@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 import json
 from pathlib import Path
@@ -14,19 +14,12 @@ from ...domain.tracking import (
     AssetSortField,
     MarketAssetItem,
     MarketAssetList,
+    sort_market_assets,
 )
 
 
-def _sort_value(item: MarketAssetItem, sort_field: AssetSortField) -> float:
-    if sort_field is AssetSortField.CHANGE_PERCENT:
-        return item.change_percent
-    if sort_field is AssetSortField.LATEST:
-        return item.latest
-    return item.amount
-
-
 class SqliteAssetCatalogCache:
-    """持久化最近活跃交易日的行情资产快照，用于盘前 09:00–09:25 清零期与主源异常回退。"""
+    """持久化最近活跃交易日的全市场行情快照与最近 25 个交易日收盘序列。"""
 
     def __init__(self, db_path: str | Path):
         self.path = Path(db_path).resolve()
@@ -62,6 +55,32 @@ class SqliteAssetCatalogCache:
                 "CREATE INDEX IF NOT EXISTS idx_asset_catalog_category_date "
                 "ON asset_catalog_entries (category, as_of_date)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS asset_daily_bars (
+                    secid TEXT NOT NULL,
+                    trade_date TEXT NOT NULL,
+                    close REAL NOT NULL,
+                    is_final INTEGER NOT NULL DEFAULT 1,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (secid, trade_date)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_asset_daily_bars_date "
+                "ON asset_daily_bars (trade_date)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS asset_sparkline_sync (
+                    secid TEXT PRIMARY KEY,
+                    synced_through_date TEXT NOT NULL,
+                    bar_count INTEGER NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
 
     @contextmanager
     def _connect(self, *, readonly: bool = False):
@@ -88,7 +107,10 @@ class SqliteAssetCatalogCache:
         normalized_date = (as_of_date or "").strip()
         if not normalized_date:
             return
-        valid = [item for item in items if item.amount > 0 and item.latest > 0]
+        item_list = list(items)
+        if not any(item.amount > 0 and item.latest > 0 for item in item_list):
+            return
+        valid = [item for item in item_list if item.latest > 0]
         if not valid:
             return
         now = time.time()
@@ -172,14 +194,7 @@ class SqliteAssetCatalogCache:
             ).fetchone()[0]
             return int(count or 0)
 
-    def read_items(
-        self,
-        category: AssetCategory,
-        *,
-        sort_field: AssetSortField,
-        descending: bool,
-        limit: int,
-    ) -> MarketAssetList | None:
+    def read_all_items(self, category: AssetCategory) -> MarketAssetList | None:
         with self._lock, self._connect(readonly=True) as conn:
             max_date = conn.execute(
                 "SELECT MAX(as_of_date) FROM asset_catalog_entries WHERE category = ? AND amount > 0",
@@ -193,7 +208,7 @@ class SqliteAssetCatalogCache:
                        open_price, high_price, low_price, previous_close,
                        volume, amount, sparkline_json
                 FROM asset_catalog_entries
-                WHERE category = ? AND as_of_date = ? AND amount > 0
+                WHERE category = ? AND as_of_date = ?
                 """,
                 (category.value, max_date),
             ).fetchall()
@@ -237,10 +252,171 @@ class SqliteAssetCatalogCache:
                     sparkline=parsed_sparkline,
                 )
             )
-
-        items.sort(key=lambda entry: _sort_value(entry, sort_field), reverse=descending)
         return MarketAssetList(
             category=category,
             as_of_date=str(max_date),
-            items=tuple(items[:limit]),
+            items=tuple(items),
+            total=len(items),
+            offset=0,
+            has_more=False,
         )
+
+    def read_items(
+        self,
+        category: AssetCategory,
+        *,
+        sort_field: AssetSortField,
+        descending: bool,
+        limit: int,
+        offset: int = 0,
+    ) -> MarketAssetList | None:
+        all_list = self.read_all_items(category)
+        if all_list is None or not all_list.items:
+            return None
+        ordered = sort_market_assets(all_list.items, sort_field, descending=descending)
+        total = len(ordered)
+        page = tuple(ordered[offset : offset + limit])
+        return MarketAssetList(
+            category=category,
+            as_of_date=all_list.as_of_date,
+            items=page,
+            total=total,
+            offset=offset,
+            has_more=offset + len(page) < total,
+        )
+
+    def load_daily_bars_map(self) -> dict[str, list[tuple[str, float, bool]]]:
+        with self._lock, self._connect(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT secid, trade_date, close, is_final FROM asset_daily_bars "
+                "ORDER BY secid ASC, trade_date ASC"
+            ).fetchall()
+        grouped: dict[str, list[tuple[str, float, bool]]] = {}
+        for secid, trade_date, close_price, is_final in rows:
+            grouped.setdefault(secid, []).append((str(trade_date), float(close_price), bool(is_final)))
+        return grouped
+
+    def load_sync_dates(self) -> dict[str, str]:
+        with self._lock, self._connect(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT secid, synced_through_date FROM asset_sparkline_sync"
+            ).fetchall()
+        return {str(secid): str(sync_date) for secid, sync_date in rows}
+
+    def upsert_daily_bars_batch(
+        self,
+        batches: Iterable[tuple[str, Sequence[tuple[str, float, bool]], str | None]],
+        *,
+        replace_secids: set[str] | None = None,
+        keep_per_secid: int = 25,
+    ) -> None:
+        batch_list = list(batches)
+        if not batch_list and not replace_secids:
+            return
+        now = time.time()
+        bar_rows: list[tuple[str, str, float, int, float]] = []
+        sync_candidates: list[tuple[str, str]] = []
+        touched_secids: list[str] = []
+        seen_touched: set[str] = set()
+
+        for secid, bars, synced_through in batch_list:
+            if secid not in seen_touched:
+                seen_touched.add(secid)
+                touched_secids.append(secid)
+            by_date: dict[str, tuple[float, bool]] = {}
+            for trade_date, close_price, is_final in bars:
+                if trade_date and close_price > 0:
+                    by_date[trade_date] = (round(float(close_price), 4), bool(is_final))
+            sorted_bars = sorted(by_date.items(), key=lambda entry: entry[0])[-keep_per_secid:]
+            for trade_date, (close_price, is_final) in sorted_bars:
+                bar_rows.append((secid, trade_date, close_price, 1 if is_final else 0, now))
+            if synced_through:
+                sync_candidates.append((secid, synced_through))
+
+        with self._lock, self._connect() as conn:
+            if replace_secids:
+                replace_list = sorted(replace_secids)
+                for idx in range(0, len(replace_list), 500):
+                    chunk = replace_list[idx : idx + 500]
+                    placeholders = ",".join("?" for _ in chunk)
+                    conn.execute(
+                        f"DELETE FROM asset_daily_bars WHERE secid IN ({placeholders})",
+                        chunk,
+                    )
+
+            if bar_rows:
+                conn.executemany(
+                    """
+                    INSERT INTO asset_daily_bars (secid, trade_date, close, is_final, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(secid, trade_date) DO UPDATE SET
+                        close = excluded.close,
+                        is_final = CASE
+                            WHEN excluded.is_final = 1 THEN 1
+                            ELSE asset_daily_bars.is_final
+                        END,
+                        updated_at = excluded.updated_at
+                    """,
+                    bar_rows,
+                )
+
+            for idx in range(0, len(touched_secids), 500):
+                chunk = touched_secids[idx : idx + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                overflow = conn.execute(
+                    f"SELECT secid FROM asset_daily_bars WHERE secid IN ({placeholders}) "
+                    "GROUP BY secid HAVING COUNT(*) > ?",
+                    (*chunk, keep_per_secid),
+                ).fetchall()
+                for (over_secid,) in overflow:
+                    conn.execute(
+                        """
+                        DELETE FROM asset_daily_bars
+                        WHERE secid = ? AND trade_date NOT IN (
+                            SELECT trade_date FROM asset_daily_bars
+                            WHERE secid = ?
+                            ORDER BY trade_date DESC
+                            LIMIT ?
+                        )
+                        """,
+                        (over_secid, over_secid, keep_per_secid),
+                    )
+
+            if sync_candidates:
+                counts_by_secid: dict[str, int] = {}
+                sync_secids = [secid for secid, _ in sync_candidates]
+                for idx in range(0, len(sync_secids), 500):
+                    chunk = sync_secids[idx : idx + 500]
+                    placeholders = ",".join("?" for _ in chunk)
+                    for secid, cnt in conn.execute(
+                        f"SELECT secid, COUNT(*) FROM asset_daily_bars "
+                        f"WHERE secid IN ({placeholders}) GROUP BY secid",
+                        chunk,
+                    ).fetchall():
+                        counts_by_secid[str(secid)] = int(cnt)
+                sync_rows = [
+                    (secid, sync_date, counts_by_secid.get(secid, 0), now)
+                    for secid, sync_date in sync_candidates
+                ]
+                conn.executemany(
+                    """
+                    INSERT INTO asset_sparkline_sync (secid, synced_through_date, bar_count, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(secid) DO UPDATE SET
+                        synced_through_date = CASE
+                            WHEN excluded.synced_through_date > asset_sparkline_sync.synced_through_date
+                            THEN excluded.synced_through_date
+                            ELSE asset_sparkline_sync.synced_through_date
+                        END,
+                        bar_count = excluded.bar_count,
+                        updated_at = excluded.updated_at
+                    """,
+                    sync_rows,
+                )
+
+    def prune_old_daily_bars(self, cutoff_trade_date: str) -> None:
+        cutoff = (cutoff_trade_date or "").strip()
+        if not cutoff:
+            return
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM asset_daily_bars WHERE trade_date < ?", (cutoff,))

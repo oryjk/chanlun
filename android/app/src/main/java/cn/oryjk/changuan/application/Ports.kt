@@ -37,7 +37,8 @@ interface MarketReader {
         category: AssetCategory,
         sortField: AssetSortField = AssetSortField.AMOUNT,
         descending: Boolean = true,
-        limit: Int = 60,
+        limit: Int = 100,
+        offset: Int = 0,
     ): MarketAssetList = MarketAssetList(category = category, asOfDate = null, items = emptyList())
 }
 

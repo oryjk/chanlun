@@ -77,6 +77,9 @@ data class MarketAssetList(
     val category: AssetCategory,
     val asOfDate: String?,
     val items: List<MarketAssetItem>,
+    val total: Int = items.size,
+    val offset: Int = 0,
+    val hasMore: Boolean = false,
 )
 
 data class Candle(

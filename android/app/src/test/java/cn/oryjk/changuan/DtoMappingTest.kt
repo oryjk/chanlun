@@ -121,6 +121,9 @@ class DtoMappingTest {
             {
               "category": "etf",
               "as_of_date": "2026-11-16",
+              "total": 938,
+              "offset": 0,
+              "has_more": true,
               "items": [
                 {
                   "stock": {"secid": "510300.SH", "symbol": "510300", "name": "沪深300ETF", "market": "ETF"},
@@ -142,6 +145,9 @@ class DtoMappingTest {
         val parsedList = MarketGateway.parseAssetList(JsonParser.parseString(assetJson).asJsonObject)
         assertEquals(AssetCategory.ETF, parsedList.category)
         assertEquals("2026-11-16", parsedList.asOfDate)
+        assertEquals(938, parsedList.total)
+        assertEquals(0, parsedList.offset)
+        assertEquals(true, parsedList.hasMore)
         assertEquals(1, parsedList.items.size)
         assertEquals("510300.SH", parsedList.items.first().stock.secid)
         assertEquals(3, parsedList.items.first().sparkline.size)

@@ -1,5 +1,15 @@
 # 变更日志
 
+## 2026-11-17 · 1.2.3（versionCode 8）· 全市场行情分页覆盖与 SQLite 20 日走势全量补齐/每日增量更新
+
+- 变更（后端全市场清单分页与 20 日走势落库增量同步）：
+  - `MarketAssetCatalogAdapter` 完整分页枚举沪 A（`sh_a`）、深 A（`sz_a`）、京 A（`hs_bjs` 北交所）及境内 ETF（`etf_hq_fund`），保留停牌股并在全市场排序中统一垫底；`EastmoneyStockSearchReader` 同步支持北交所（`NEEQ / 京A`）搜索与名称解析。
+  - `GET /api/market/assets` 新增 `offset`（默认 `0`）与 `limit`（默认 `100`、上限 `500`）分页参数，响应新增 `total`、`offset`、`has_more`，并结合内存快照缓存实现全市场毫秒级分页与排序。
+  - `SqliteAssetCatalogCache` 新增 `asset_daily_bars` 与 `asset_sparkline_sync` 表；应用启动后台线程 `asset-catalog-sync` 按每批 100 只、12 线程并发补齐全市场股票与 ETF 近 20 个交易日收盘走势落库，支持盘中实时拼接、除权跳空比例缩放并触发前复权全量覆盖，且在收盘后（`15:05+`）直接从全市场行情快照零单股 K 线请求完成每日增量更新，多日停机仅按缺口天数拉取补齐。
+- 变更（Android 原生端全市场真实总数与触底无感分页）：
+  - `MarketGateway`、`AppViewModel` 与 `MarketScreen` 对接 `offset / limit / total / has_more`：表头展示全市场真实总数（沪深北 5900+ 只股票、境内 1600+ 只 ETF），首屏加载 100 条，列表触底自动无感续接下一页并按 `secid` 去重合并，切换分类/排序回到首行，打开详情抽屉返回保持原滚动位置；版本递增至 `1.2.3`（`versionCode = 8`）。
+- 验证：完成 backend 203 项单测、iOS Swift 语法校验、`./gradlew testDebugUnitTest assembleDebug`（0 Kotlin 警告）及 `:8000` 实盘全市场 SQLite 落库与接口验证。
+
 ## 2026-11-17 · 1.2.2（versionCode 7）· 行情列表改为四列严格对齐布局（标的 / 成交额 / 涨跌幅 / 最新价）
 
 - 变更（四列对齐表格布局）：重构 [MarketScreen.kt](android/app/src/main/java/cn/oryjk/changuan/presentation/screens/MarketScreen.kt) 列表与表头，使表头与数据行共享同一列宽与右侧对齐基线，「成交额」「涨跌幅」「最新价」表头正下方分别直接展示 `57.67 亿`、`+1.30%`、`1453.90`（停牌无成交展示 `停牌`），左列仅保留资产名称、书签、代码市场与买卖点标签，解决此前成交额与涨跌幅下方未对齐的问题，并在 Robolectric 测试中添加表头与单元格像素坐标边界断言。

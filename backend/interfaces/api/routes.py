@@ -89,14 +89,18 @@ def get_market_assets(
     category: str = "stock",
     sort: str = "amount",
     order: str = "desc",
-    limit: int = Query(default=60, ge=1, le=200),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0, le=50000),
 ) -> MarketAssetListResponse:
     query = queries(request).get_market_assets
     if query is None:
         raise HTTPException(503, "资产清单服务尚未配置")
-    assets = query.execute(category=category, sort=sort, order=order, limit=limit)
+    assets = query.execute(category=category, sort=sort, order=order, limit=limit, offset=offset)
     return MarketAssetListResponse(
         category=assets.category.value,
         as_of_date=assets.as_of_date,
+        total=assets.total,
+        offset=assets.offset,
+        has_more=assets.has_more,
         items=assets.items,
     )

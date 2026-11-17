@@ -43,6 +43,7 @@ class MarketAssetCatalogReader(Protocol):
         sort_field: AssetSortField,
         descending: bool,
         limit: int,
+        offset: int = 0,
     ) -> MarketAssetList: ...
 
 

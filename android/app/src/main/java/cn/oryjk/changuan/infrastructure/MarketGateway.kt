@@ -91,6 +91,7 @@ class MarketGateway(
         sortField: AssetSortField,
         descending: Boolean,
         limit: Int,
+        offset: Int,
     ): MarketAssetList =
         api.send(
             path = "api/market/assets",
@@ -99,6 +100,7 @@ class MarketGateway(
                 "sort" to sortField.rawValue,
                 "order" to if (descending) "desc" else "asc",
                 "limit" to limit.toString(),
+                "offset" to offset.toString(),
             ),
             mapper = ::parseAssetList,
         )
@@ -359,26 +361,34 @@ class MarketGateway(
                 updateError = obj.optString("update_error"),
                 analysisVersion = obj.optInt("analysis_version"),
             )
-        internal fun parseAssetList(obj: JsonObject): MarketAssetList =
-            MarketAssetList(
+        internal fun parseAssetList(obj: JsonObject): MarketAssetList {
+            val items = obj.optArray("items").map { row ->
+                MarketAssetItem(
+                    stock = parseStock(row.reqObject("stock")),
+                    latest = row.reqDouble("latest"),
+                    change = row.optDouble("change") ?: 0.0,
+                    changePercent = row.optDouble("change_percent") ?: 0.0,
+                    open = row.optDouble("open") ?: 0.0,
+                    high = row.optDouble("high") ?: 0.0,
+                    low = row.optDouble("low") ?: 0.0,
+                    previousClose = row.optDouble("previous_close") ?: 0.0,
+                    volume = row.optDouble("volume") ?: 0.0,
+                    amount = row.optDouble("amount") ?: 0.0,
+                    sparkline = row.optDoubleList("sparkline"),
+                    signalLabel = row.optString("signal_label"),
+                )
+            }
+            val offset = obj.optInt("offset") ?: 0
+            val total = obj.optInt("total") ?: (offset + items.size)
+            val hasMore = obj.optBoolean("has_more") ?: (offset + items.size < total)
+            return MarketAssetList(
                 category = AssetCategory.fromRaw(obj.optString("category")),
                 asOfDate = obj.optString("as_of_date"),
-                items = obj.optArray("items").map { row ->
-                    MarketAssetItem(
-                        stock = parseStock(row.reqObject("stock")),
-                        latest = row.reqDouble("latest"),
-                        change = row.optDouble("change") ?: 0.0,
-                        changePercent = row.optDouble("change_percent") ?: 0.0,
-                        open = row.optDouble("open") ?: 0.0,
-                        high = row.optDouble("high") ?: 0.0,
-                        low = row.optDouble("low") ?: 0.0,
-                        previousClose = row.optDouble("previous_close") ?: 0.0,
-                        volume = row.optDouble("volume") ?: 0.0,
-                        amount = row.optDouble("amount") ?: 0.0,
-                        sparkline = row.optDoubleList("sparkline"),
-                        signalLabel = row.optString("signal_label"),
-                    )
-                },
+                items = items,
+                total = total,
+                offset = offset,
+                hasMore = hasMore,
             )
+        }
     }
 }

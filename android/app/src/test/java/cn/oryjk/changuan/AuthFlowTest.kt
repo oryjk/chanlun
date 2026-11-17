@@ -184,6 +184,7 @@ class AuthFlowTest {
                 sortField: AssetSortField,
                 descending: Boolean,
                 limit: Int,
+                offset: Int,
             ): MarketAssetList = MarketAssetList(
                 category = category,
                 asOfDate = "2026-11-16",
@@ -201,6 +202,9 @@ class AuthFlowTest {
                         amount = 1453900.0,
                     ),
                 ),
+                total = 1,
+                offset = offset,
+                hasMore = false,
             )
         }
         val trackedSecids = mutableSetOf<String>()
@@ -259,6 +263,102 @@ class AuthFlowTest {
         vm.logout()
         advanceUntilIdle()
         assertEquals(emptyList<TrackedAsset>(), vm.state.value.trackings)
+        vm.activate(false)
+    }
+
+    @Test
+    fun `market asset pagination appends unique rows and updates total`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(dispatcher)
+        val pageOneItem = MarketAssetItem(
+            stock = DefaultStocks.KWEICHOW_MOUTAI,
+            latest = 1453.9,
+            change = 18.64,
+            changePercent = 1.3,
+            open = 1426.3,
+            high = 1454.93,
+            low = 1425.0,
+            previousClose = 1435.26,
+            volume = 1000.0,
+            amount = 1453900.0,
+        )
+        val pageTwoItem = MarketAssetItem(
+            stock = Stock("920045.BJ", "920045", "蘅东光", "京A"),
+            latest = 351.94,
+            change = 12.34,
+            changePercent = 3.63,
+            open = 330.0,
+            high = 360.58,
+            low = 320.3,
+            previousClose = 339.6,
+            volume = 1575972.0,
+            amount = 541736881.0,
+        )
+        val requestedOffsets = mutableListOf<Int>()
+        val marketGateway = object : MarketReader, QuoteWriter {
+            override suspend fun search(query: String): List<Stock> = emptyList()
+            override suspend fun snapshot(secid: String, timeframe: Timeframe, refresh: Boolean): MarketSnapshot =
+                error("not used")
+            override suspend fun quote(secid: String): MarketQuote = error("not used")
+            override suspend fun series(secid: String): QuoteSeries = error("not used")
+            override suspend fun rankings(): RankingBoard = error("not used")
+            override suspend fun confluence(secid: String): SignalConfluence = error("not used")
+            override suspend fun record(quote: MarketQuote): QuoteSeries = error("not used")
+            override suspend fun assets(
+                category: AssetCategory,
+                sortField: AssetSortField,
+                descending: Boolean,
+                limit: Int,
+                offset: Int,
+            ): MarketAssetList {
+                requestedOffsets.add(offset)
+                return if (offset == 0) {
+                    MarketAssetList(
+                        category = category,
+                        asOfDate = "2026-11-17",
+                        items = listOf(pageOneItem),
+                        total = 2,
+                        offset = 0,
+                        hasMore = true,
+                    )
+                } else {
+                    // Simulate slight shift returning duplicate pageOneItem plus pageTwoItem
+                    MarketAssetList(
+                        category = category,
+                        asOfDate = "2026-11-17",
+                        items = listOf(pageOneItem, pageTwoItem),
+                        total = 2,
+                        offset = offset,
+                        hasMore = false,
+                    )
+                }
+            }
+        }
+        val vm = AppViewModel(
+            servicesFactory = EnvironmentServicesFactory {
+                EnvironmentServices(
+                    market = MarketUseCases(marketGateway, marketGateway),
+                    auth = AuthUseCases(FakeAuthGateway(), FakeAuthGateway(), InMemorySessionStore()),
+                )
+            },
+            environmentStore = InMemoryEnvironmentStore(),
+            themeStore = InMemoryThemePreferenceStore(),
+            routes = InMemoryRouteStore(),
+            externalScope = scope,
+        )
+
+        vm.activate(true)
+        advanceUntilIdle()
+        assertEquals(listOf(0), requestedOffsets)
+        assertEquals(2, vm.state.value.stockAssetsTotal)
+        assertEquals(true, vm.state.value.stockAssetsHasMore)
+        assertEquals(listOf("600519.SH"), vm.state.value.stockAssets.map { it.stock.secid })
+
+        vm.loadMoreAssets()
+        advanceUntilIdle()
+        assertEquals(listOf(0, 1), requestedOffsets)
+        assertEquals(false, vm.state.value.stockAssetsHasMore)
+        assertEquals(listOf("600519.SH", "920045.BJ"), vm.state.value.stockAssets.map { it.stock.secid })
         vm.activate(false)
     }
 }

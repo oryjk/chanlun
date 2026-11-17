@@ -13,8 +13,10 @@ _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _infer_market(secid: str, matched_market: str | None = None) -> str:
-    if matched_market in {"沪A", "深A", "北A", "ETF"}:
+    if matched_market in {"沪A", "深A", "京A", "ETF"}:
         return matched_market
+    if matched_market == "北A":
+        return "京A"
     sid = SecurityId.parse(secid)
     if (sid.exchange is Exchange.SH and sid.code.startswith("5")) or (
         sid.exchange is Exchange.SZ and sid.code.startswith("15")
@@ -23,7 +25,7 @@ def _infer_market(secid: str, matched_market: str | None = None) -> str:
     if sid.exchange is Exchange.SH:
         return "沪A"
     if sid.exchange is Exchange.BJ:
-        return "北A"
+        return "京A"
     return "深A"
 
 

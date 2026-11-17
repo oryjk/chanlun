@@ -6,7 +6,7 @@ from .eastmoney_codes import from_eastmoney
 class EastmoneyStockSearchReader:
     URL = "https://searchapi.eastmoney.com/api/suggest/get"
     TOKEN = "D43BF722C8E33BDC906FB84D85E326E8"
-    SUPPORTED_CLASSES = {"AStock", "Fund"}
+    SUPPORTED_CLASSES = {"AStock", "Fund", "NEEQ"}
 
     def __init__(self, http_client: JsonHttpClient):
         self._http = http_client
@@ -37,6 +37,10 @@ class EastmoneyStockSearchReader:
 
     def _is_supported(self, item: dict) -> bool:
         classify = item.get("Classify")
-        if classify not in self.SUPPORTED_CLASSES:
-            return False
-        return classify != "Fund" or "ETF" in (item.get("Name") or "").upper()
+        if classify == "AStock":
+            return True
+        if classify == "NEEQ":
+            return item.get("SecurityTypeName") == "京A"
+        if classify == "Fund":
+            return "ETF" in (item.get("Name") or "").upper()
+        return False

@@ -301,4 +301,7 @@ class MarketAssetItemResponse(ApiModel):
 class MarketAssetListResponse(ApiModel):
     category: str
     as_of_date: str | None = None
+    total: int = 0
+    offset: int = 0
+    has_more: bool = False
     items: tuple[MarketAssetItemResponse, ...]

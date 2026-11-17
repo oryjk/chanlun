@@ -89,6 +89,7 @@ fun RootScreen(
                         onOpenAsset = { stock -> viewModel.openAssetDetail(stock) },
                         onToggleTrack = viewModel::toggleTracking,
                         onOpenSearch = openSearchScreen,
+                        onLoadMore = viewModel::loadMoreAssets,
                         modifier = innerModifier,
                     )
 

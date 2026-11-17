@@ -54,6 +54,7 @@ class Application:
     commands: CommandServices
     ranking_worker: RankingWorker | None
     native_tracking: NativeTrackingServices
+    asset_catalog: MarketAssetCatalogAdapter | None = None
 
 
 def build_application(settings: Settings) -> Application:
@@ -137,4 +138,5 @@ def build_application(settings: Settings) -> Application:
         commands=commands,
         ranking_worker=ranking_worker,
         native_tracking=native_tracking,
+        asset_catalog=asset_catalog,
     )

@@ -25,12 +25,17 @@ async def lifespan(application):
     worker = services.ranking_worker
     if worker:
         worker.start()
+    catalog = services.asset_catalog
+    if catalog:
+        catalog.start_background_sync()
     try:
         yield
     finally:
         await asyncio.to_thread(application.state.native_auth.stop)
         if worker:
             await asyncio.to_thread(worker.stop)
+        if catalog:
+            await asyncio.to_thread(catalog.stop_background_sync)
 
 
 app = FastAPI(title="缠观 API", version="0.5.0", lifespan=lifespan)

@@ -59,6 +59,7 @@ import kotlin.math.pow
 
 const val INITIAL_UPDATE_CHECK_DELAY_MILLIS = 3_000L
 const val UPDATE_CHECK_INTERVAL_MILLIS = 30_000L
+const val MARKET_ASSETS_PAGE_SIZE = 100
 
 enum class AuthMode {
     LOGIN,
@@ -75,10 +76,16 @@ data class AppUiState(
     val assetSortDescending: Boolean = true,
     val stockAssets: List<MarketAssetItem> = emptyList(),
     val etfAssets: List<MarketAssetItem> = emptyList(),
+    val stockAssetsTotal: Int = 0,
+    val etfAssetsTotal: Int = 0,
+    val stockAssetsHasMore: Boolean = false,
+    val etfAssetsHasMore: Boolean = false,
     val assetsAsOfDate: String? = null,
     val assetsLoading: Boolean = false,
     val assetsRefreshing: Boolean = false,
+    val assetsLoadingMore: Boolean = false,
     val assetsError: String = "",
+    val assetsLoadMoreError: String = "",
     val trackings: List<TrackedAsset> = emptyList(),
     val trackingAsOfDate: String = "",
     val trackingLoading: Boolean = false,
@@ -175,6 +182,7 @@ class AppViewModel(
     private var generation: Int = 0
     private var loadJob: Job? = null
     private var assetsJob: Job? = null
+    private var assetsLoadMoreJob: Job? = null
     private var trackingJob: Job? = null
     private var boardJob: Job? = null
     private var searchJob: Job? = null
@@ -214,6 +222,7 @@ class AppViewModel(
             trackingGeneration += 1
             loadJob?.cancel()
             assetsJob?.cancel()
+            assetsLoadMoreJob?.cancel()
             trackingJob?.cancel()
             boardJob?.cancel()
             updateLoopJob?.cancel()
@@ -224,6 +233,7 @@ class AppViewModel(
                     confluenceLoading = false,
                     assetsLoading = false,
                     assetsRefreshing = false,
+                    assetsLoadingMore = false,
                     trackingLoading = false,
                     trackingRefreshing = false,
                     boardLoading = false,
@@ -252,6 +262,7 @@ class AppViewModel(
         authEpoch += 1
         loadJob?.cancel()
         assetsJob?.cancel()
+        assetsLoadMoreJob?.cancel()
         trackingJob?.cancel()
         boardJob?.cancel()
         searchJob?.cancel()
@@ -267,10 +278,16 @@ class AppViewModel(
                 series = emptyList(),
                 stockAssets = emptyList(),
                 etfAssets = emptyList(),
+                stockAssetsTotal = 0,
+                etfAssetsTotal = 0,
+                stockAssetsHasMore = false,
+                etfAssetsHasMore = false,
                 assetsAsOfDate = null,
                 assetsLoading = false,
                 assetsRefreshing = false,
+                assetsLoadingMore = false,
                 assetsError = "",
+                assetsLoadMoreError = "",
                 trackings = emptyList(),
                 trackingAsOfDate = "",
                 trackingLoading = false,
@@ -535,7 +552,15 @@ class AppViewModel(
 
     fun selectAssetCategory(category: AssetCategory) {
         if (_state.value.assetCategory == category) return
-        _state.update { it.copy(assetCategory = category, assetsError = "") }
+        assetsLoadMoreJob?.cancel()
+        _state.update {
+            it.copy(
+                assetCategory = category,
+                assetsError = "",
+                assetsLoadingMore = false,
+                assetsLoadMoreError = "",
+            )
+        }
         reloadAssets(forceRefresh = false)
     }
 
@@ -650,9 +675,12 @@ class AppViewModel(
         if (!forceRefresh && existingList.isNotEmpty()) return
         val gen = ++assetsGeneration
         assetsJob?.cancel()
+        assetsLoadMoreJob?.cancel()
         _state.update {
             it.copy(
                 assetsError = "",
+                assetsLoadMoreError = "",
+                assetsLoadingMore = false,
                 assetsLoading = existingList.isEmpty(),
                 assetsRefreshing = forceRefresh && existingList.isNotEmpty(),
             )
@@ -663,7 +691,8 @@ class AppViewModel(
                     category = category,
                     sortField = _state.value.assetSortField,
                     descending = _state.value.assetSortDescending,
-                    limit = 80,
+                    limit = MARKET_ASSETS_PAGE_SIZE,
+                    offset = 0,
                 )
             }.onSuccess { result ->
                 if (!active || gen != assetsGeneration) return@onSuccess
@@ -671,17 +700,23 @@ class AppViewModel(
                     when (result.category) {
                         AssetCategory.STOCK -> state.copy(
                             stockAssets = result.items,
+                            stockAssetsTotal = result.total,
+                            stockAssetsHasMore = result.hasMore,
                             assetsAsOfDate = result.asOfDate ?: state.assetsAsOfDate,
                             assetsLoading = false,
                             assetsRefreshing = false,
                             assetsError = "",
+                            assetsLoadMoreError = "",
                         )
                         AssetCategory.ETF -> state.copy(
                             etfAssets = result.items,
+                            etfAssetsTotal = result.total,
+                            etfAssetsHasMore = result.hasMore,
                             assetsAsOfDate = result.asOfDate ?: state.assetsAsOfDate,
                             assetsLoading = false,
                             assetsRefreshing = false,
                             assetsError = "",
+                            assetsLoadMoreError = "",
                         )
                     }
                 }
@@ -692,6 +727,67 @@ class AppViewModel(
                         assetsLoading = false,
                         assetsRefreshing = false,
                         assetsError = err.message ?: "读取行情清单失败，请稍后重试",
+                    )
+                }
+            }
+        }
+    }
+
+    fun loadMoreAssets() {
+        if (!active) return
+        val current = _state.value
+        if (current.assetsLoading || current.assetsRefreshing || current.assetsLoadingMore) return
+        val category = current.assetCategory
+        val existingList = if (category == AssetCategory.STOCK) current.stockAssets else current.etfAssets
+        val hasMore = if (category == AssetCategory.STOCK) current.stockAssetsHasMore else current.etfAssetsHasMore
+        if (existingList.isEmpty() || !hasMore) return
+
+        val gen = assetsGeneration
+        val sortField = current.assetSortField
+        val descending = current.assetSortDescending
+        val offset = existingList.size
+        assetsLoadMoreJob?.cancel()
+        _state.update { it.copy(assetsLoadingMore = true, assetsLoadMoreError = "") }
+        assetsLoadMoreJob = scope.launch {
+            runCatching {
+                market.reader.assets(
+                    category = category,
+                    sortField = sortField,
+                    descending = descending,
+                    limit = MARKET_ASSETS_PAGE_SIZE,
+                    offset = offset,
+                )
+            }.onSuccess { result ->
+                if (!active || gen != assetsGeneration || _state.value.assetCategory != category) return@onSuccess
+                _state.update { state ->
+                    val currentItems = if (result.category == AssetCategory.STOCK) state.stockAssets else state.etfAssets
+                    val seen = currentItems.mapTo(HashSet()) { it.stock.secid }
+                    val merged = currentItems + result.items.filter { seen.add(it.stock.secid) }
+                    when (result.category) {
+                        AssetCategory.STOCK -> state.copy(
+                            stockAssets = merged,
+                            stockAssetsTotal = result.total.coerceAtLeast(merged.size),
+                            stockAssetsHasMore = result.hasMore,
+                            assetsLoadingMore = false,
+                            assetsLoadMoreError = "",
+                        )
+                        AssetCategory.ETF -> state.copy(
+                            etfAssets = merged,
+                            etfAssetsTotal = result.total.coerceAtLeast(merged.size),
+                            etfAssetsHasMore = result.hasMore,
+                            assetsLoadingMore = false,
+                            assetsLoadMoreError = "",
+                        )
+                    }
+                }
+            }.onFailure { err ->
+                if (!active || gen != assetsGeneration || _state.value.assetCategory != category || err is CancellationException) {
+                    return@onFailure
+                }
+                _state.update {
+                    it.copy(
+                        assetsLoadingMore = false,
+                        assetsLoadMoreError = err.message ?: "加载更多行情失败，点击重试",
                     )
                 }
             }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -56,6 +57,43 @@ class MarketAssetList:
     category: AssetCategory
     as_of_date: str | None
     items: tuple[MarketAssetItem, ...]
+    total: int = 0
+    offset: int = 0
+    has_more: bool = False
+
+    def __post_init__(self) -> None:
+        if self.total <= 0 and self.items:
+            object.__setattr__(self, "total", self.offset + len(self.items))
+
+
+def is_active_market_asset(item: MarketAssetItem) -> bool:
+    """判断标的在当前交易快照中是否存在有效成交。"""
+    return item.latest > 0 and item.volume > 0 and item.amount > 0
+
+
+def _asset_sort_metric(item: MarketAssetItem, sort_field: AssetSortField) -> float:
+    if sort_field is AssetSortField.CHANGE_PERCENT:
+        return item.change_percent
+    if sort_field is AssetSortField.LATEST:
+        return item.latest
+    return item.amount
+
+
+def sort_market_assets(
+    items: Iterable[MarketAssetItem],
+    sort_field: AssetSortField,
+    *,
+    descending: bool = True,
+) -> list[MarketAssetItem]:
+    """统一排序市场标的：活跃成交股在前，停牌/零成交股固定垫底，secid 升序作确定性次级键。"""
+    return sorted(
+        items,
+        key=lambda entry: (
+            0 if is_active_market_asset(entry) else 1,
+            -_asset_sort_metric(entry, sort_field) if descending else _asset_sort_metric(entry, sort_field),
+            entry.stock.secid,
+        ),
+    )
 
 
 @dataclass(frozen=True)

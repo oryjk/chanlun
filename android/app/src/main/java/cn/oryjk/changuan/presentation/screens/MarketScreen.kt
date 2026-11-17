@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -32,6 +33,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +67,7 @@ import cn.oryjk.changuan.presentation.designsystem.PageHeader
 import cn.oryjk.changuan.presentation.designsystem.RefreshableContent
 import cn.oryjk.changuan.presentation.designsystem.StarkUnderlineTabs
 import cn.oryjk.changuan.presentation.designsystem.tabular
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private data class MarketColumnWidths(
     val amount: Dp,
@@ -79,13 +87,48 @@ fun MarketScreen(
     onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier,
     applyStatusBarPadding: Boolean = true,
+    onLoadMore: () -> Unit = {},
 ) {
     val palette = LocalChanPalette.current
     val category = state.assetCategory
     val items = if (category == AssetCategory.STOCK) state.stockAssets else state.etfAssets
+    val totalCount = when (category) {
+        AssetCategory.STOCK -> state.stockAssetsTotal
+        AssetCategory.ETF -> state.etfAssetsTotal
+    }.let { if (it > 0) it else items.size }
+    val hasMore = if (category == AssetCategory.STOCK) state.stockAssetsHasMore else state.etfAssetsHasMore
     val trackedSecids = state.trackings.map { it.stock.secid }.toSet()
     val subtitle = state.assetsAsOfDate?.takeIf { it.isNotBlank() }?.let { "行情截至 $it" }
-        ?: "沪深股票与境内 ETF 实时行情列表"
+        ?: "沪深北 A 股与境内 ETF 实时行情列表"
+    val listState = rememberLazyListState()
+    var previousSortKey by remember {
+        mutableStateOf(Triple(category, state.assetSortField, state.assetSortDescending))
+    }
+    val currentSortKey = Triple(category, state.assetSortField, state.assetSortDescending)
+
+    LaunchedEffect(currentSortKey) {
+        if (previousSortKey != currentSortKey) {
+            previousSortKey = currentSortKey
+            listState.scrollToItem(0)
+        }
+    }
+
+    LaunchedEffect(listState, items.size, hasMore, state.assetsLoadingMore, state.assetsLoadMoreError) {
+        if (!hasMore || items.isEmpty() || state.assetsLoadingMore || state.assetsLoadMoreError.isNotEmpty()) {
+            return@LaunchedEffect
+        }
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            lastVisible to info.totalItemsCount
+        }
+            .distinctUntilChanged()
+            .collect { (lastVisible, total) ->
+                if (total > 0 && lastVisible >= (items.size - 15).coerceAtLeast(0)) {
+                    onLoadMore()
+                }
+            }
+    }
 
     FixedHeaderPage(
         modifier = modifier,
@@ -149,7 +192,7 @@ fun MarketScreen(
                 Column(modifier = Modifier.fillMaxSize()) {
                     MarketTableHeaderRow(
                         category = category,
-                        count = items.size,
+                        count = totalCount,
                         activeSortField = state.assetSortField,
                         descending = state.assetSortDescending,
                         widths = widths,
@@ -224,6 +267,7 @@ fun MarketScreen(
 
                             else -> {
                                 LazyColumn(
+                                    state = listState,
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .testTag("market-asset-list"),
@@ -237,6 +281,16 @@ fun MarketScreen(
                                             showDivider = index < items.lastIndex,
                                             onOpen = { onOpenAsset(item.stock) },
                                             onToggleTrack = { onToggleTrack(item.stock) },
+                                        )
+                                    }
+                                    item(key = "market-list-footer") {
+                                        MarketListFooter(
+                                            totalCount = totalCount,
+                                            categoryLabel = category.label,
+                                            hasMore = hasMore,
+                                            loadingMore = state.assetsLoadingMore,
+                                            loadMoreError = state.assetsLoadMoreError,
+                                            onLoadMore = onLoadMore,
                                         )
                                     }
                                 }
@@ -514,6 +568,68 @@ private fun MarketAssetTableRow(
                 thickness = 0.5.dp,
                 color = palette.cardBorder,
             )
+        }
+    }
+}
+
+@Composable
+private fun MarketListFooter(
+    totalCount: Int,
+    categoryLabel: String,
+    hasMore: Boolean,
+    loadingMore: Boolean,
+    loadMoreError: String,
+    onLoadMore: () -> Unit,
+) {
+    val palette = LocalChanPalette.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .testTag("market-list-footer"),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            loadingMore -> {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = palette.primaryBrand,
+                    )
+                    Text(
+                        text = "正在加载更多${categoryLabel}…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.inkMuted,
+                    )
+                }
+            }
+
+            loadMoreError.isNotEmpty() -> {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = loadMoreError,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.warmAmberText,
+                        textAlign = TextAlign.Center,
+                    )
+                    ActionPill(text = "重新加载", outlined = true, onClick = onLoadMore)
+                }
+            }
+
+            !hasMore && totalCount > 0 -> {
+                Text(
+                    text = "已显示全部 $totalCount 只${categoryLabel}",
+                    style = MaterialTheme.typography.labelMedium.tabular(),
+                    color = palette.inkMuted,
+                )
+            }
         }
     }
 }
