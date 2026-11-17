@@ -2,13 +2,14 @@ package cn.oryjk.changuan.presentation.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,25 +17,33 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cn.oryjk.changuan.domain.AssetCategory
 import cn.oryjk.changuan.domain.AssetSortField
@@ -47,13 +56,17 @@ import cn.oryjk.changuan.presentation.designsystem.ActionPill
 import cn.oryjk.changuan.presentation.designsystem.FixedHeaderPage
 import cn.oryjk.changuan.presentation.designsystem.HeaderIconAction
 import cn.oryjk.changuan.presentation.designsystem.LedgerHeaderRule
-import cn.oryjk.changuan.presentation.designsystem.LedgerRow
-import cn.oryjk.changuan.presentation.designsystem.LedgerSparkline
 import cn.oryjk.changuan.presentation.designsystem.PageHeader
 import cn.oryjk.changuan.presentation.designsystem.RefreshableContent
-import cn.oryjk.changuan.presentation.designsystem.SortableColumnHeader
 import cn.oryjk.changuan.presentation.designsystem.StarkUnderlineTabs
 import cn.oryjk.changuan.presentation.designsystem.tabular
+
+private data class MarketColumnWidths(
+    val amount: Dp,
+    val changePercent: Dp,
+    val latest: Dp,
+    val gap: Dp,
+)
 
 @Composable
 fun MarketScreen(
@@ -111,124 +124,122 @@ fun MarketScreen(
                 optionTag = { idx -> "market-category-${AssetCategory.entries[idx].rawValue}" },
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = if (items.isEmpty()) {
-                        category.label
-                    } else {
-                        "共 ${items.size} 只${category.label}"
-                    },
-                    style = MaterialTheme.typography.labelMedium.tabular(),
-                    color = palette.inkMuted,
-                    maxLines = 1,
-                    softWrap = false,
-                )
-                Spacer(Modifier.width(8.dp))
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AssetSortField.entries.forEach { field ->
-                        SortableColumnHeader(
-                            label = field.label,
-                            active = state.assetSortField == field,
-                            descending = state.assetSortDescending,
-                            onClick = { onToggleSort(field) },
-                            modifier = Modifier.testTag("market-sort-${field.rawValue}"),
-                        )
-                    }
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val widths = when {
+                    maxWidth >= 600.dp -> MarketColumnWidths(
+                        amount = 104.dp,
+                        changePercent = 92.dp,
+                        latest = 96.dp,
+                        gap = 12.dp,
+                    )
+                    maxWidth < 375.dp -> MarketColumnWidths(
+                        amount = 68.dp,
+                        changePercent = 62.dp,
+                        latest = 64.dp,
+                        gap = 6.dp,
+                    )
+                    else -> MarketColumnWidths(
+                        amount = 74.dp,
+                        changePercent = 68.dp,
+                        latest = 68.dp,
+                        gap = 8.dp,
+                    )
                 }
-            }
 
-            LedgerHeaderRule()
+                Column(modifier = Modifier.fillMaxSize()) {
+                    MarketTableHeaderRow(
+                        category = category,
+                        count = items.size,
+                        activeSortField = state.assetSortField,
+                        descending = state.assetSortDescending,
+                        widths = widths,
+                        onToggleSort = onToggleSort,
+                    )
 
-            RefreshableContent(
-                isRefreshing = state.assetsRefreshing,
-                onRefresh = onRefresh,
-                modifier = Modifier.fillMaxSize(),
-                actionLabel = "刷新行情列表",
-            ) {
-                when {
-                    state.assetsLoading && items.isEmpty() -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = palette.primaryBrand,
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                text = "正在加载${category.label}列表…",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = palette.inkSecondary,
-                            )
-                        }
-                    }
+                    LedgerHeaderRule()
 
-                    state.assetsError.isNotEmpty() && items.isEmpty() -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Text(
-                                text = state.assetsError,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = palette.warmAmberText,
-                                textAlign = TextAlign.Center,
-                            )
-                            ActionPill(text = "重新加载", onClick = onRefresh)
-                        }
-                    }
+                    RefreshableContent(
+                        isRefreshing = state.assetsRefreshing,
+                        onRefresh = onRefresh,
+                        modifier = Modifier.fillMaxSize(),
+                        actionLabel = "刷新行情列表",
+                    ) {
+                        when {
+                            state.assetsLoading && items.isEmpty() -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = palette.primaryBrand,
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        text = "正在加载${category.label}列表…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = palette.inkSecondary,
+                                    )
+                                }
+                            }
 
-                    items.isEmpty() -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = "暂无${category.label}行情数据",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = palette.inkPrimary,
-                            )
-                            ActionPill(text = "刷新重试", outlined = true, onClick = onRefresh)
-                        }
-                    }
+                            state.assetsError.isNotEmpty() && items.isEmpty() -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp, vertical = 32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Text(
+                                        text = state.assetsError,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = palette.warmAmberText,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                    ActionPill(text = "重新加载", onClick = onRefresh)
+                                }
+                            }
 
-                    else -> {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .testTag("market-asset-list"),
-                            contentPadding = PaddingValues(bottom = 18.dp),
-                        ) {
-                            itemsIndexed(items, key = { _, item -> item.stock.secid }) { index, item ->
-                                MarketAssetLedgerRow(
-                                    item = item,
-                                    tracked = item.stock.secid in trackedSecids,
-                                    showDivider = index < items.lastIndex,
-                                    onOpen = { onOpenAsset(item.stock) },
-                                    onToggleTrack = { onToggleTrack(item.stock) },
-                                )
+                            items.isEmpty() -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp, vertical = 32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = "暂无${category.label}行情数据",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = palette.inkPrimary,
+                                    )
+                                    ActionPill(text = "刷新重试", outlined = true, onClick = onRefresh)
+                                }
+                            }
+
+                            else -> {
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .testTag("market-asset-list"),
+                                    contentPadding = PaddingValues(bottom = 18.dp),
+                                ) {
+                                    itemsIndexed(items, key = { _, item -> item.stock.secid }) { index, item ->
+                                        MarketAssetTableRow(
+                                            item = item,
+                                            tracked = item.stock.secid in trackedSecids,
+                                            widths = widths,
+                                            showDivider = index < items.lastIndex,
+                                            onOpen = { onOpenAsset(item.stock) },
+                                            onToggleTrack = { onToggleTrack(item.stock) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -239,9 +250,119 @@ fun MarketScreen(
 }
 
 @Composable
-private fun MarketAssetLedgerRow(
+private fun MarketTableHeaderRow(
+    category: AssetCategory,
+    count: Int,
+    activeSortField: AssetSortField,
+    descending: Boolean,
+    widths: MarketColumnWidths,
+    onToggleSort: (AssetSortField) -> Unit,
+) {
+    val palette = LocalChanPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (count == 0) category.label else "共 $count 只${category.label}",
+            style = MaterialTheme.typography.labelMedium.tabular(),
+            color = palette.inkMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 6.dp),
+        )
+        MarketSortableHeaderCell(
+            label = AssetSortField.AMOUNT.label,
+            active = activeSortField == AssetSortField.AMOUNT,
+            descending = descending,
+            onClick = { onToggleSort(AssetSortField.AMOUNT) },
+            modifier = Modifier
+                .width(widths.amount)
+                .testTag("market-sort-amount"),
+        )
+        Spacer(Modifier.width(widths.gap))
+        MarketSortableHeaderCell(
+            label = AssetSortField.CHANGE_PERCENT.label,
+            active = activeSortField == AssetSortField.CHANGE_PERCENT,
+            descending = descending,
+            onClick = { onToggleSort(AssetSortField.CHANGE_PERCENT) },
+            modifier = Modifier
+                .width(widths.changePercent)
+                .testTag("market-sort-change_percent"),
+        )
+        Spacer(Modifier.width(widths.gap))
+        MarketSortableHeaderCell(
+            label = AssetSortField.LATEST.label,
+            active = activeSortField == AssetSortField.LATEST,
+            descending = descending,
+            onClick = { onToggleSort(AssetSortField.LATEST) },
+            modifier = Modifier
+                .width(widths.latest)
+                .testTag("market-sort-latest"),
+        )
+    }
+}
+
+@Composable
+private fun MarketSortableHeaderCell(
+    label: String,
+    active: Boolean,
+    descending: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalChanPalette.current
+    val icon = when {
+        !active -> Icons.Outlined.UnfoldMore
+        descending -> Icons.Outlined.ExpandMore
+        else -> Icons.Outlined.ExpandLess
+    }
+    val sortStateText = when {
+        !active -> "未排序"
+        descending -> "降序"
+        else -> "升序"
+    }
+    val tint = if (active) palette.actionPrimary else palette.inkMuted
+    Box(
+        modifier = modifier
+            .defaultMinSize(minHeight = 32.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { stateDescription = sortStateText },
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = tint,
+                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+            )
+            Spacer(Modifier.width(2.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(13.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MarketAssetTableRow(
     item: MarketAssetItem,
     tracked: Boolean,
+    widths: MarketColumnWidths,
     showDivider: Boolean,
     onOpen: () -> Unit,
     onToggleTrack: () -> Unit,
@@ -252,68 +373,147 @@ private fun MarketAssetLedgerRow(
         append(item.stock.symbol)
         append(" ")
         append(item.stock.market)
-        if (item.amount > 0.0) {
-            append("  成交 ")
-            append(MarketFormat.volume(item.amount))
-        } else if (item.volume <= 0.0) {
-            append("  停牌/未成交")
-        }
         if (!item.signalLabel.isNullOrBlank()) {
-            append("  ")
+            append(" ")
             append(item.signalLabel)
         }
     }
+    val amountText = when {
+        item.amount > 0.0 -> MarketFormat.volume(item.amount)
+        item.volume <= 0.0 -> "停牌"
+        else -> "—"
+    }
 
-    LedgerRow(
-        title = item.stock.name,
-        headlineValue = MarketFormat.price(item.latest, item.stock.decimals),
-        headlineLabel = MarketFormat.percent(item.changePercent),
-        headlineColor = toneColor,
-        expanded = false,
-        expandable = false,
-        onToggleExpand = onOpen,
-        showDivider = showDivider,
-        modifier = Modifier.testTag("market-row-${item.stock.secid}"),
-        headerStateDescription = if (tracked) "已跟踪" else null,
-        titleSuffix = {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 60.dp)
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = "查看${item.stock.name}行情",
+                    onClick = onOpen,
+                )
+                .then(
+                    if (tracked) {
+                        Modifier.semantics { stateDescription = "已跟踪" }
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .testTag("market-row-${item.stock.secid}"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = item.stock.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.inkPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Box(
+                        modifier = Modifier
+                            .clickable(
+                                role = Role.Button,
+                                onClickLabel = if (tracked) "结束跟踪" else "加入跟踪",
+                                onClick = onToggleTrack,
+                            )
+                            .padding(2.dp)
+                            .semantics {
+                                contentDescription = if (tracked) "取消跟踪${item.stock.name}" else "跟踪${item.stock.name}"
+                            }
+                            .testTag("market-bookmark-${item.stock.secid}"),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (tracked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                            contentDescription = null,
+                            tint = if (tracked) palette.warmAmber else palette.inkMuted,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = metaText,
+                    style = MaterialTheme.typography.labelSmall.tabular(),
+                    color = palette.inkMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
             Box(
                 modifier = Modifier
-                    .clickable(
-                        role = Role.Button,
-                        onClickLabel = if (tracked) "结束跟踪" else "加入跟踪",
-                        onClick = onToggleTrack,
-                    )
-                    .padding(2.dp)
-                    .semantics { contentDescription = if (tracked) "取消跟踪${item.stock.name}" else "跟踪${item.stock.name}" }
-                    .testTag("market-bookmark-${item.stock.secid}"),
-                contentAlignment = Alignment.Center,
+                    .width(widths.amount)
+                    .testTag("market-cell-amount-${item.stock.secid}"),
+                contentAlignment = Alignment.CenterEnd,
             ) {
-                Icon(
-                    imageVector = if (tracked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                    contentDescription = null,
-                    tint = if (tracked) palette.warmAmber else palette.inkMuted,
-                    modifier = Modifier.size(16.dp),
+                Text(
+                    text = amountText,
+                    style = MaterialTheme.typography.titleSmall.tabular(),
+                    fontWeight = FontWeight.Medium,
+                    color = if (item.amount > 0.0) palette.inkPrimary else palette.inkMuted,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
-        },
-        sparkline = if (item.sparkline.size >= 2) {
-            {
-                LedgerSparkline(
-                    points = item.sparkline,
-                    changePercent = item.changePercent,
+
+            Spacer(Modifier.width(widths.gap))
+
+            Box(
+                modifier = Modifier
+                    .width(widths.changePercent)
+                    .testTag("market-cell-change-${item.stock.secid}"),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text(
+                    text = MarketFormat.percent(item.changePercent),
+                    style = MaterialTheme.typography.titleSmall.tabular(),
+                    fontWeight = FontWeight.SemiBold,
+                    color = toneColor,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
-        } else {
-            null
-        },
-        metaContent = {
-            Text(
-                text = metaText,
-                style = MaterialTheme.typography.labelSmall.tabular(),
-                color = palette.inkMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+
+            Spacer(Modifier.width(widths.gap))
+
+            Box(
+                modifier = Modifier
+                    .width(widths.latest)
+                    .testTag("market-cell-latest-${item.stock.secid}"),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text(
+                    text = MarketFormat.price(item.latest, item.stock.decimals),
+                    style = MaterialTheme.typography.titleMedium.tabular(),
+                    fontWeight = FontWeight.SemiBold,
+                    color = toneColor,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+        }
+
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth(),
+                thickness = 0.5.dp,
+                color = palette.cardBorder,
             )
-        },
-    )
+        }
+    }
 }

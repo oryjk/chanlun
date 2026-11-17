@@ -16,9 +16,11 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
+import kotlin.math.abs
 import cn.oryjk.changuan.domain.AppThemeMode
 import cn.oryjk.changuan.domain.AppUser
 import cn.oryjk.changuan.domain.AssetCategory
@@ -549,9 +551,28 @@ class ClarityUiScreenshotTest {
                 )
             }
         }
-        composeRule.onNodeWithText("600519 沪A  成交 57.67 亿  二类买点").assertExists()
-        composeRule.onNodeWithText("300750 深A  成交 48.90 亿  一类买点").assertExists()
-        composeRule.onNodeWithText("600036 沪A  成交 16.18 亿").assertExists()
+        composeRule.onNodeWithText("600519 沪A 二类买点").assertExists()
+        composeRule.onNodeWithText("300750 深A 一类买点").assertExists()
+        composeRule.onNodeWithText("600036 沪A").assertExists()
+        composeRule.onNodeWithText("57.67 亿").assertExists()
+        composeRule.onNodeWithText("+1.30%").assertExists()
+        composeRule.onNodeWithText("1453.90").assertExists()
+
+        val amountHeader = composeRule.onNodeWithTag("market-sort-amount").fetchSemanticsNode().boundsInRoot
+        val amountCell = composeRule.onNodeWithTag("market-cell-amount-600519.SH", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Amount header/cell left misaligned: $amountHeader vs $amountCell", abs(amountHeader.left - amountCell.left) <= 2f)
+        assertTrue("Amount header/cell right misaligned: $amountHeader vs $amountCell", abs(amountHeader.right - amountCell.right) <= 2f)
+
+        val changeHeader = composeRule.onNodeWithTag("market-sort-change_percent").fetchSemanticsNode().boundsInRoot
+        val changeCell = composeRule.onNodeWithTag("market-cell-change-600519.SH", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Change header/cell left misaligned: $changeHeader vs $changeCell", abs(changeHeader.left - changeCell.left) <= 2f)
+        assertTrue("Change header/cell right misaligned: $changeHeader vs $changeCell", abs(changeHeader.right - changeCell.right) <= 2f)
+
+        val latestHeader = composeRule.onNodeWithTag("market-sort-latest").fetchSemanticsNode().boundsInRoot
+        val latestCell = composeRule.onNodeWithTag("market-cell-latest-600519.SH", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Latest header/cell left misaligned: $latestHeader vs $latestCell", abs(latestHeader.left - latestCell.left) <= 2f)
+        assertTrue("Latest header/cell right misaligned: $latestHeader vs $latestCell", abs(latestHeader.right - latestCell.right) <= 2f)
+
         captureAllWindows("market_list_light.png", darkTheme = false)
     }
 
