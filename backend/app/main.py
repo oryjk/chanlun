@@ -10,9 +10,11 @@ from ..interfaces.api.app_tracking_routes import router as app_tracking_router
 from ..interfaces.api.error_handlers import register_error_handlers
 from ..interfaces.api.routes import router
 from ..interfaces.api.tracking_routes import router as tracking_router
+from ..interfaces.api.sumly_webview_routes import router as sumly_router
 from .container import build_application
 from .env import load_dotenv_if_present
 from .settings import load_settings
+from .sumly_bridge import build_sumly_bridge
 from .app_auth import build_native_auth
 
 load_dotenv_if_present()
@@ -41,6 +43,7 @@ async def lifespan(application):
 
 app = FastAPI(title="缠观 API", version="0.5.0", lifespan=lifespan)
 app.state.settings = settings
+app.state.sumly_bridge = build_sumly_bridge(settings)
 app.state.native_auth = build_native_auth()
 app.state.native_tracking = services.native_tracking
 app.state.queries = services.queries
@@ -53,6 +56,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(auth_router)
+app.include_router(sumly_router)
 app.include_router(tracking_router)
 app.include_router(app_auth_router)
 app.include_router(app_tracking_router)

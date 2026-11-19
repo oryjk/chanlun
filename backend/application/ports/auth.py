@@ -9,6 +9,12 @@ class IdentityGateway(Protocol):
     def exchange_webview_code(self, code: str) -> UserIdentity: ...
 
 
+class SumlyTicketStore(Protocol):
+    def save(self, digest: str, user_id: int) -> None: ...
+
+    def consume(self, digest: str) -> int | None: ...
+
+
 class SessionCodec(Protocol):
     max_age_seconds: int
 

@@ -265,7 +265,7 @@ class RankingBoardResponse(ApiModel):
 
 
 class UserIdentityResponse(ApiModel):
-    user_id: int
+    user_id: int | str
     nickname: str
     avatar_url: str | None
 

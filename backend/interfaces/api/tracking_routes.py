@@ -20,8 +20,7 @@ def _require_h5_user_key(request: Request) -> str:
     identity = session_query.execute(request.cookies.get(SESSION_COOKIE))
     if identity is None:
         raise HTTPException(401, "请先登录")
-    # 隔离 H5 报名系统整数 ID 与原生账号 UUID，避免主键冲突
-    return f"h5:{identity.user_id}"
+    return identity.tracking_key
 
 
 @router.get("", response_model=TrackingOverviewResponse)
