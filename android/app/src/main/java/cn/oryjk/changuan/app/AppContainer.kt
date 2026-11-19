@@ -7,6 +7,7 @@ import cn.oryjk.changuan.application.EnvironmentServices
 import cn.oryjk.changuan.application.EnvironmentServicesFactory
 import cn.oryjk.changuan.application.EnvironmentStore
 import cn.oryjk.changuan.application.MarketUseCases
+import cn.oryjk.changuan.application.OvernightQuery
 import cn.oryjk.changuan.application.RouteStore
 import cn.oryjk.changuan.application.ThemePreferenceStore
 import cn.oryjk.changuan.application.TrackingUseCases
@@ -16,6 +17,7 @@ import cn.oryjk.changuan.infrastructure.AuthGateway
 import cn.oryjk.changuan.infrastructure.HttpTransport
 import cn.oryjk.changuan.infrastructure.MarketGateway
 import cn.oryjk.changuan.infrastructure.OkHttpTransport
+import cn.oryjk.changuan.infrastructure.OvernightGateway
 import cn.oryjk.changuan.infrastructure.SharedPreferencesEnvironmentStore
 import cn.oryjk.changuan.infrastructure.SharedPreferencesRouteStore
 import cn.oryjk.changuan.infrastructure.SharedPreferencesSessionStore
@@ -77,6 +79,7 @@ class AppContainer(context: Context) {
             EnvironmentServices(
                 market = MarketUseCases(reader = marketGateway, writer = marketGateway),
                 auth = AuthUseCases(reader = authGateway, commands = authGateway, store = sessionStore),
+                overnight = OvernightQuery(OvernightGateway(apiClient)),
                 tracking = TrackingUseCases(
                     reader = trackingGateway,
                     commands = trackingGateway,

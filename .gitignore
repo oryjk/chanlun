@@ -32,6 +32,7 @@ var/rankings/
 var/accounts/
 var/trackings/
 var/cache/
+var/overnight/
 
 # Native Apple builds and local signing configuration
 ios/Local.xcconfig

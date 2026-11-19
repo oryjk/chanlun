@@ -25,6 +25,7 @@ import DragonLoader from './presentation/components/DragonLoader.tsx'
 import MarketChart, { type ChartLayersState } from './presentation/components/MarketChart.tsx'
 import MarketListPage from './presentation/components/MarketListPage.tsx'
 import MenuPage from './presentation/components/MenuPage.tsx'
+import OvernightPage from './presentation/components/OvernightPage.tsx'
 import RankingPage from './presentation/components/RankingPage.tsx'
 import RealtimeQuotePanel from './presentation/components/RealtimeQuotePanel.tsx'
 import SignalPanel from './presentation/components/SignalPanel.tsx'
@@ -35,6 +36,7 @@ import { GLOSSARY } from './presentation/glossary.ts'
 import { useMarketAssets } from './presentation/hooks/useMarketAssets.ts'
 import { useMarketRoute } from './presentation/hooks/useMarketRoute.ts'
 import { useMarketSnapshot } from './presentation/hooks/useMarketSnapshot.ts'
+import { useOvernightSnapshot } from './presentation/hooks/useOvernightSnapshot.ts'
 import { useRankings } from './presentation/hooks/useRankings.ts'
 import { useRealtimeQuote } from './presentation/hooks/useRealtimeQuote.ts'
 import { useSignalConfluence } from './presentation/hooks/useSignalConfluence.ts'
@@ -54,6 +56,11 @@ const GUIDANCE_LABELS: Record<string, string> = {
   bearish: '偏空观察',
   neutral: '暂时等待',
 }
+
+const RANKING_METHODS = [
+  { id: 'chan', label: '缠论' },
+  { id: 'overnight', label: '隔夜套利' },
+] as const
 
 function formatVolume(value: number): string {
   if (value >= 100000000) return `${(value / 100000000).toFixed(2)} 亿`
@@ -98,6 +105,7 @@ function App({ useCases }: AppProps) {
   const decimals = getPriceDecimals(selectedStock)
   const price = (value: number | string) => formatPrice(value, decimals)
   const [reloadKey, setReloadKey] = useState(0)
+  const [rankingMethod, setRankingMethod] = useState<(typeof RANKING_METHODS)[number]['id']>('chan')
   const [layers, setLayers] = useState<ChartLayersState>({
     fractals: true,
     pens: true,
@@ -107,9 +115,11 @@ function App({ useCases }: AppProps) {
   })
   const isDetail = view === 'detail'
   const isRealtime = timeframe === 'realtime'
+  const isOvernight = rankingMethod === 'overnight'
 
   const assetsState = useMarketAssets(useCases.getMarketAssets, { enabled: view === 'market' })
-  const rankingsState = useRankings(useCases.getRankings, reloadKey, view === 'rankings')
+  const rankingsState = useRankings(useCases.getRankings, reloadKey, view === 'rankings' && !isOvernight)
+  const overnightState = useOvernightSnapshot(useCases.getOvernightSnapshot, reloadKey, view === 'rankings' && isOvernight)
   const trackings = useTrackings({
     user,
     authChannel,
@@ -149,7 +159,7 @@ function App({ useCases }: AppProps) {
   const handleSelectStock = (stock: Stock | null | undefined, fromView?: RouteView) => {
     if (!stock?.secid) return
     if (fromView === 'rankings') {
-      setTimeframe('1d')
+      setTimeframe(isOvernight ? 'realtime' : '1d')
     }
     if (view === 'detail' && stock.secid === selectedStock.secid) {
       setReloadKey((value) => value + 1)
@@ -189,12 +199,12 @@ function App({ useCases }: AppProps) {
   const isRefreshSpinning = view === 'market'
     ? assetsState.loading
     : view === 'rankings'
-      ? rankingsState.loading
+      ? (isOvernight ? overnightState.loading : rankingsState.loading)
       : view === 'tracking'
         ? trackings.loading
         : (loading || refreshing)
 
-  const refreshLabel = view === 'rankings' ? '刷新榜单' : '刷新行情'
+  const refreshLabel = view === 'rankings' ? (isOvernight ? '刷新隔夜扫描' : '刷新榜单') : '刷新行情'
 
   return (
     <div className="app-shell">
@@ -306,13 +316,36 @@ function App({ useCases }: AppProps) {
         )}
 
         {view === 'rankings' && (
-          <RankingPage
-            board={rankingsState.board}
-            loading={rankingsState.loading}
-            error={rankingsState.error}
-            onRefresh={() => setReloadKey((value) => value + 1)}
-            onSelectStock={(stock) => handleSelectStock(stock, 'rankings')}
-          />
+          <>
+            <div className="underline-tabs method-selector" role="group" aria-label="榜单方法">
+              {RANKING_METHODS.map((method) => (
+                <button
+                  key={method.id}
+                  type="button"
+                  aria-pressed={rankingMethod === method.id}
+                  onClick={() => setRankingMethod(method.id)}
+                >
+                  {method.label}
+                </button>
+              ))}
+            </div>
+            <div hidden={isOvernight}>
+              <RankingPage
+                board={rankingsState.board}
+                loading={rankingsState.loading}
+                error={rankingsState.error}
+                onRefresh={handleRefreshAction}
+                onSelectStock={(stock) => handleSelectStock(stock, 'rankings')}
+              />
+            </div>
+            {isOvernight && (
+              <OvernightPage
+                {...overnightState}
+                onRefresh={handleRefreshAction}
+                onSelectStock={(stock) => handleSelectStock(stock, 'rankings')}
+              />
+            )}
+          </>
         )}
 
         {view === 'menu' && (

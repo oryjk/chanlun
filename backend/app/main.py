@@ -8,6 +8,7 @@ from ..interfaces.api.auth_routes import router as auth_router
 from ..interfaces.api.app_auth_routes import router as app_auth_router
 from ..interfaces.api.app_tracking_routes import router as app_tracking_router
 from ..interfaces.api.error_handlers import register_error_handlers
+from ..interfaces.api.overnight_routes import router as overnight_router
 from ..interfaces.api.routes import router
 from ..interfaces.api.tracking_routes import router as tracking_router
 from .container import build_application
@@ -29,9 +30,14 @@ async def lifespan(application):
     catalog = services.asset_catalog
     if catalog:
         catalog.start_background_sync()
+    overnight = services.overnight_worker
+    if overnight:
+        overnight.start()
     try:
         yield
     finally:
+        if overnight:
+            await asyncio.to_thread(overnight.stop)
         await asyncio.to_thread(application.state.native_auth.stop)
         if worker:
             await asyncio.to_thread(worker.stop)
@@ -56,4 +62,5 @@ app.include_router(auth_router)
 app.include_router(tracking_router)
 app.include_router(app_auth_router)
 app.include_router(app_tracking_router)
+app.include_router(overnight_router)
 register_error_handlers(app)

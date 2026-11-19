@@ -1,3 +1,4 @@
+import type { OvernightSnapshot } from '../domain/overnight.ts'
 import type {
   AssetCategory,
   AssetSortField,
@@ -64,6 +65,12 @@ export interface MarketGateway {
   recordQuoteSample: (quote: RealtimeQuote, signal?: AbortSignal) => Promise<QuoteSeries>
 }
 
+export type GetOvernightSnapshot = (signal?: AbortSignal) => Promise<OvernightSnapshot>
+
+export interface MethodsReader {
+  getOvernightSnapshot: GetOvernightSnapshot
+}
+
 export interface AuthGateway {
   getSession: (signal?: AbortSignal) => Promise<AuthSession>
   getActiveSession: (signal?: AbortSignal) => Promise<AuthSession>
@@ -127,6 +134,7 @@ export interface AppUseCases {
   getQuote: (secid: string, signal?: AbortSignal) => Promise<RealtimeQuote>
   getQuoteSeries: (secid: string, signal?: AbortSignal) => Promise<QuoteSeries>
   getRankings: (limit: number, signal?: AbortSignal) => Promise<RankingBoard>
+  getOvernightSnapshot: GetOvernightSnapshot
   recordQuoteSample: (quote: RealtimeQuote, signal?: AbortSignal) => Promise<QuoteSeries>
   getTrackings: (channel: AuthChannel, signal?: AbortSignal) => Promise<TrackingOverview>
   startTracking: (

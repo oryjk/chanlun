@@ -147,8 +147,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .underline-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); }
 .underline-tabs button { position: relative; padding: 12px 18px; color: var(--muted); background: transparent; border: 0; font-size: 14px; font-weight: 500; white-space: nowrap; }
 .underline-tabs button:hover { color: var(--text); }
-.underline-tabs button[aria-selected="true"] { color: var(--text); font-weight: 600; }
-.underline-tabs button[aria-selected="true"]::after { content: ''; position: absolute; right: 16px; bottom: 0; left: 16px; height: 2px; background: var(--accent); }
+.underline-tabs button[aria-selected="true"], .method-selector button[aria-pressed="true"] { color: var(--text); font-weight: 600; }
+.underline-tabs button[aria-selected="true"]::after, .method-selector button[aria-pressed="true"]::after { content: ''; position: absolute; right: 16px; bottom: 0; left: 16px; height: 2px; background: var(--accent); }
 
 .segmented-switch { display: inline-flex; padding: 2px; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--radius); }
 .segmented-switch button { padding: 4px 10px; color: var(--muted); background: transparent; border: 0; border-radius: 3px; font-size: 12px; font-weight: 500; white-space: nowrap; }
@@ -549,6 +549,22 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .ranking-quote { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
 .ranking-quote strong { color: var(--text); font-size: 15px; font-weight: 700; }
 .ranking-quote span { font-size: 12px; font-weight: 600; }
+
+.overnight-trade-date { color: var(--text); font-weight: 600; }
+.overnight-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border-bottom: 1px solid var(--line); }
+.overnight-metrics > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 10px 12px 10px 0; font-size: 13px; }
+.overnight-metrics dt { color: var(--text-secondary); }
+.overnight-metrics dd { margin: 0; font-weight: 600; }
+.overnight-section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.overnight-section-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.overnight-section-head small { color: var(--text-secondary); font-size: 12px; }
+.overnight-row .ranking-name-line strong { white-space: normal; overflow-wrap: anywhere; }
+.overnight-row-status, .overnight-evidence { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+.overnight-row-status strong { color: var(--accent); font-weight: 600; }
+
+@media (max-width: 767px) {
+  .overnight-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .ranking-conclusion-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; padding-left: 32px; }
 .conclusion-badge { font-size: 12px; font-weight: 600; }

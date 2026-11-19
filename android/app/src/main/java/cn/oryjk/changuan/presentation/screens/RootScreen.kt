@@ -115,6 +115,7 @@ fun RootScreen(
                         onSelectStock = { stock -> viewModel.openAssetDetail(stock, forceDaily = true) },
                         onToggleTrack = viewModel::toggleTracking,
                         modifier = innerModifier,
+                        onSelectMethod = viewModel::selectRankingMethod,
                     )
 
                     RootTab.ACCOUNT -> AccountScreen(

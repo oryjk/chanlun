@@ -7,6 +7,7 @@ import {
 } from '../application/emailAuth.ts'
 import { createGetMarketAssets } from '../application/getMarketAssets.ts'
 import { createGetMarketSnapshot } from '../application/getMarketSnapshot.ts'
+import { createGetOvernightSnapshot } from '../application/getOvernightSnapshot.ts'
 import { createGetQuote } from '../application/getQuote.ts'
 import { createGetQuoteSeries } from '../application/getQuoteSeries.ts'
 import { createGetRankings } from '../application/getRankings.ts'
@@ -22,12 +23,14 @@ import { createSearchStocks } from '../application/searchStocks.ts'
 import { createStartTracking } from '../application/startTracking.ts'
 import { createAuthGateway } from '../infrastructure/api/authGateway.ts'
 import { createMarketGateway } from '../infrastructure/api/marketGateway.ts'
+import { createMethodsGateway } from '../infrastructure/api/methodsGateway.ts'
 import { createTrackingGateway } from '../infrastructure/api/trackingGateway.ts'
 import { createLocalPreferences } from '../infrastructure/storage/localPreferences.ts'
 import { createMiniProgramBridge } from '../infrastructure/wechat/miniProgramBridge.ts'
 
 const localPreferences = createLocalPreferences()
 const marketGateway = createMarketGateway()
+const methodsGateway = createMethodsGateway()
 const authGateway = createAuthGateway(localPreferences)
 const trackingGateway = createTrackingGateway(localPreferences)
 const miniProgramBridge = createMiniProgramBridge()
@@ -40,6 +43,7 @@ export const useCases: AppUseCases = {
   getQuote: createGetQuote(marketGateway),
   getQuoteSeries: createGetQuoteSeries(marketGateway),
   getRankings: createGetRankings(marketGateway),
+  getOvernightSnapshot: createGetOvernightSnapshot(methodsGateway),
   recordQuoteSample: createRecordQuoteSample(marketGateway),
   getTrackings: createGetTrackings(trackingGateway),
   startTracking: createStartTracking(trackingGateway),

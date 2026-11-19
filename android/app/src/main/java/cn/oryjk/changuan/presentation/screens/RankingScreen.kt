@@ -43,6 +43,7 @@ import cn.oryjk.changuan.domain.SignalRules
 import cn.oryjk.changuan.domain.Stock
 import cn.oryjk.changuan.presentation.AppUiState
 import cn.oryjk.changuan.presentation.LocalChanPalette
+import cn.oryjk.changuan.presentation.RankingMethod
 import cn.oryjk.changuan.presentation.charts.RankingSparklineCanvas
 import cn.oryjk.changuan.presentation.designsystem.ActionPill
 import cn.oryjk.changuan.presentation.designsystem.FilterPill
@@ -69,6 +70,7 @@ fun RankingScreen(
     modifier: Modifier = Modifier,
     applyStatusBarPadding: Boolean = true,
     onTitleTextLayout: ((secid: String, TextLayoutResult) -> Unit)? = null,
+    onSelectMethod: (RankingMethod) -> Unit = {},
 ) {
     val palette = LocalChanPalette.current
     val board = state.board
@@ -93,9 +95,13 @@ fun RankingScreen(
         else -> selectedGroupEntries
     }
     val trackedSecids = state.trackings.map { it.stock.secid }.toSet()
+    val showsOvernight = state.rankingMethod == RankingMethod.OVERNIGHT
+    val refreshing = if (showsOvernight) state.overnightRefreshing else state.boardRefreshing
 
     val subtitle = buildString {
-        if (board != null && !board.tradeDate.isNullOrBlank()) {
+        if (showsOvernight) {
+            append("尾盘扫描与次交易日上午提醒")
+        } else if (board != null && !board.tradeDate.isNullOrBlank()) {
             append("收盘日 ${board.tradeDate}")
             board.generatedAt?.let { genAt ->
                 append("  更新 ${MarketTime.formatDate(genAt, "MM-dd HH:mm")} (北京时间)")
@@ -116,19 +122,33 @@ fun RankingScreen(
                     HeaderIconAction(
                         icon = Icons.Outlined.Refresh,
                         contentDescription = "刷新榜单",
-                        loading = state.boardRefreshing,
+                        loading = refreshing,
                         onClick = onRefresh,
                     )
                 },
             )
         },
     ) {
+        StarkUnderlineTabs(
+            options = RankingMethod.entries.map { it.label },
+            selectedIndex = state.rankingMethod.ordinal,
+            onSelect = { onSelectMethod(RankingMethod.entries[it]) },
+        )
         RefreshableContent(
-            isRefreshing = state.boardRefreshing,
+            isRefreshing = refreshing,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
-            actionLabel = "刷新全市场收盘榜单",
+            actionLabel = if (showsOvernight) "刷新隔夜套利扫描结果" else "刷新全市场收盘榜单",
         ) {
+            if (showsOvernight) {
+                OvernightRankingContent(
+                    snapshot = state.overnight,
+                    loading = state.overnightLoading,
+                    error = state.overnightError,
+                    onOpenStock = onSelectStock,
+                )
+                return@RefreshableContent
+            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()

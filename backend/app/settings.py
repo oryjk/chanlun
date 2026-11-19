@@ -20,6 +20,8 @@ class Settings:
     ranking_enabled: bool = True
     tracking_store_path: str = "var/trackings/trackings.sqlite3"
     asset_catalog_cache_path: str = "var/cache/asset_catalog.sqlite3"
+    overnight_store_path: str = "var/overnight/overnight.sqlite3"
+    overnight_enabled: bool = True
 
 
 def _cors_allow_origins() -> list[str]:
@@ -61,4 +63,6 @@ def load_settings() -> Settings:
             "CHANLUN_ASSET_CATALOG_CACHE_PATH",
             "var/cache/asset_catalog.sqlite3",
         ),
+        overnight_store_path=os.getenv('CHANLUN_OVERNIGHT_STORE_PATH', 'var/overnight/overnight.sqlite3'),
+        overnight_enabled=os.getenv('CHANLUN_OVERNIGHT_ENABLED', 'true').lower() == 'true',
     )

@@ -43,6 +43,8 @@ from ..infrastructure.market.sina_quote import SinaQuoteReader
 from ..infrastructure.market.sina_stock_pool import SinaStockPoolReader
 from ..infrastructure.persistence.json_quote_store import JsonQuoteStore
 from ..infrastructure.persistence.sqlite_ranking_store import SqliteRankingStore
+from .overnight import build_overnight
+from .overnight_worker import OvernightWorker
 from .ranking_worker import RankingWorker
 from .settings import Settings
 from .tracking import NativeTrackingServices, build_native_tracking
@@ -55,6 +57,7 @@ class Application:
     ranking_worker: RankingWorker | None
     native_tracking: NativeTrackingServices
     asset_catalog: MarketAssetCatalogAdapter | None = None
+    overnight_worker: OvernightWorker | None = None
 
 
 def build_application(settings: Settings) -> Application:
@@ -74,6 +77,7 @@ def build_application(settings: Settings) -> Application:
     registration = RegistrationSystemGateway(settings.registration_api_base)
     session_codec = SignedSessionCodec(settings.session_secret, settings.session_max_age)
     clock = SystemClock()
+    overnight_query, overnight_worker = build_overnight(settings, http_client, clock)
     pipeline = MarketAnalysisPipeline(
         ChanAnalyzer(),
         StructureGuidanceEvaluator(),
@@ -108,6 +112,7 @@ def build_application(settings: Settings) -> Application:
         get_current_user=GetCurrentUserQuery(session_codec),
         get_mini_program_link=GetMiniProgramLinkQuery(registration),
         get_market_assets=GetMarketAssetsQuery(asset_catalog, ranking_store, clock),
+        get_overnight=overnight_query,
     )
     commands = CommandServices(
         record_quote_sample=RecordQuoteSampleCommand(quote_store),
@@ -139,4 +144,5 @@ def build_application(settings: Settings) -> Application:
         ranking_worker=ranking_worker,
         native_tracking=native_tracking,
         asset_catalog=asset_catalog,
+        overnight_worker=overnight_worker,
     )

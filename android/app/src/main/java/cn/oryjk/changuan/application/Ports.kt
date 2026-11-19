@@ -12,6 +12,7 @@ import cn.oryjk.changuan.domain.EmailCodeSent
 import cn.oryjk.changuan.domain.MarketAssetList
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
+import cn.oryjk.changuan.domain.OvernightSnapshot
 import cn.oryjk.changuan.domain.QuoteSeries
 import cn.oryjk.changuan.domain.RankingBoard
 import cn.oryjk.changuan.domain.ReleaseHistoryItem
@@ -44,6 +45,10 @@ interface MarketReader {
 
 interface TrackingReader {
     suspend fun fetchTrackings(): TrackingOverview
+}
+
+fun interface OvernightReader {
+    suspend fun snapshot(): OvernightSnapshot
 }
 
 interface TrackingCommands {
@@ -124,6 +129,7 @@ data class EnvironmentServices(
     val market: MarketUseCases,
     val auth: AuthUseCases,
     val tracking: TrackingUseCases? = null,
+    val overnight: OvernightQuery? = null,
 )
 
 fun interface EnvironmentServicesFactory {

@@ -28,6 +28,8 @@ import cn.oryjk.changuan.domain.MarketAssetItem
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketTime
+import cn.oryjk.changuan.domain.OvernightPhase
+import cn.oryjk.changuan.domain.OvernightSnapshot
 import cn.oryjk.changuan.domain.QuotePoint
 import cn.oryjk.changuan.domain.QuoteSeriesRules
 import cn.oryjk.changuan.domain.RankingBoard
@@ -53,6 +55,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.Instant
 import kotlin.math.min
 import kotlin.math.pow
@@ -64,6 +67,11 @@ const val MARKET_ASSETS_PAGE_SIZE = 100
 enum class AuthMode {
     LOGIN,
     REGISTER,
+}
+
+enum class RankingMethod(val label: String) {
+    CHAN("缠论"),
+    OVERNIGHT("隔夜套利"),
 }
 
 data class AppUiState(
@@ -103,6 +111,11 @@ data class AppUiState(
     val quote: MarketQuote? = null,
     val series: List<QuotePoint> = emptyList(),
     val board: RankingBoard? = null,
+    val rankingMethod: RankingMethod = RankingMethod.CHAN,
+    val overnight: OvernightSnapshot? = null,
+    val overnightLoading: Boolean = false,
+    val overnightRefreshing: Boolean = false,
+    val overnightError: String = "",
     val user: AppUser? = null,
     val loading: Boolean = false,
     val refreshing: Boolean = false,
@@ -141,6 +154,7 @@ class AppViewModel(
     private val routes: RouteStore,
     val updates: AppUpdateUseCases? = null,
     externalScope: CoroutineScope? = null,
+    private val now: () -> Instant = Instant::now,
 ) : ViewModel() {
 
     constructor(
@@ -185,6 +199,8 @@ class AppViewModel(
     private var assetsLoadMoreJob: Job? = null
     private var trackingJob: Job? = null
     private var boardJob: Job? = null
+    private var overnightJob: Job? = null
+    private var overnightExpiryJob: Job? = null
     private var searchJob: Job? = null
     private var cooldownJob: Job? = null
     private var updateLoopJob: Job? = null
@@ -225,6 +241,8 @@ class AppViewModel(
             assetsLoadMoreJob?.cancel()
             trackingJob?.cancel()
             boardJob?.cancel()
+            overnightJob?.cancel()
+            overnightExpiryJob?.cancel()
             updateLoopJob?.cancel()
             _state.update {
                 it.copy(
@@ -238,6 +256,8 @@ class AppViewModel(
                     trackingRefreshing = false,
                     boardLoading = false,
                     boardRefreshing = false,
+                    overnightLoading = false,
+                    overnightRefreshing = false,
                 )
             }
         }
@@ -265,6 +285,8 @@ class AppViewModel(
         assetsLoadMoreJob?.cancel()
         trackingJob?.cancel()
         boardJob?.cancel()
+        overnightJob?.cancel()
+        overnightExpiryJob?.cancel()
         searchJob?.cancel()
         cooldownJob?.cancel()
         activeServices = servicesFactory.create(environment)
@@ -297,6 +319,10 @@ class AppViewModel(
                 pinnedSecids = emptySet(),
                 customTrackingOrder = emptyList(),
                 board = null,
+                overnight = null,
+                overnightLoading = false,
+                overnightRefreshing = false,
+                overnightError = "",
                 user = null,
                 loading = false,
                 refreshing = false,
@@ -550,6 +576,12 @@ class AppViewModel(
         reload()
     }
 
+    fun selectRankingMethod(method: RankingMethod) {
+        if (_state.value.rankingMethod == method) return
+        _state.update { it.copy(rankingMethod = method) }
+        if (_state.value.tab == RootTab.RANKING) reload()
+    }
+
     fun selectAssetCategory(category: AssetCategory) {
         if (_state.value.assetCategory == category) return
         assetsLoadMoreJob?.cancel()
@@ -607,6 +639,7 @@ class AppViewModel(
                 confluenceLoading = false,
             )
         }
+        if (_state.value.tab == RootTab.RANKING) reload()
     }
 
     fun selectStock(stock: Stock, forceDaily: Boolean = false) {
@@ -639,6 +672,8 @@ class AppViewModel(
         val currentGen = generation
         loadJob?.cancel()
         boardJob?.cancel()
+        overnightJob?.cancel()
+        overnightExpiryJob?.cancel()
         _state.update {
             it.copy(
                 loading = false,
@@ -646,6 +681,8 @@ class AppViewModel(
                 confluenceLoading = false,
                 boardLoading = false,
                 boardRefreshing = false,
+                overnightLoading = false,
+                overnightRefreshing = false,
             )
         }
         if (!active) return
@@ -662,7 +699,10 @@ class AppViewModel(
         when (currentState.tab) {
             RootTab.MARKET -> reloadAssets(forceRefresh = refresh)
             RootTab.TRACKING -> reloadTrackings(forceRefresh = refresh)
-            RootTab.RANKING -> startRankings(currentGen, showPullIndicator = refresh)
+            RootTab.RANKING -> when (currentState.rankingMethod) {
+                RankingMethod.CHAN -> startRankings(currentGen, showPullIndicator = refresh)
+                RankingMethod.OVERNIGHT -> startOvernight(currentGen, showPullIndicator = refresh)
+            }
             RootTab.ACCOUNT -> Unit
         }
     }
@@ -1138,6 +1178,82 @@ class AppViewModel(
                 delay(60_000L)
             }
         }
+    }
+
+    private fun startOvernight(currentGen: Int, showPullIndicator: Boolean) {
+        val query = activeServices.overnight ?: return
+        val cached = trackOvernightDeadline(currentGen, _state.value.overnight)
+        _state.update {
+            it.copy(
+                overnight = cached,
+                overnightLoading = cached == null,
+                overnightRefreshing = showPullIndicator && cached != null,
+            )
+        }
+        overnightJob = scope.launch {
+            while (accept(currentGen)) {
+                try {
+                    val snapshot = query.snapshot()
+                    if (!accept(currentGen)) return@launch
+                    val current = trackOvernightDeadline(currentGen, snapshot)
+                    _state.update {
+                        it.copy(
+                            overnight = current,
+                            overnightLoading = false,
+                            overnightRefreshing = false,
+                            overnightError = "",
+                        )
+                    }
+                    delay(if (snapshot.phase == OvernightPhase.SCANNING) 5_000L else 30_000L)
+                } catch (error: Exception) {
+                    if (error is CancellationException || !accept(currentGen)) return@launch
+                    _state.update {
+                        it.copy(
+                            overnightLoading = false,
+                            overnightRefreshing = false,
+                            overnightError = error.message ?: "读取隔夜套利扫描结果失败",
+                        )
+                    }
+                    delay(30_000L)
+                }
+            }
+        }
+    }
+
+    private fun trackOvernightDeadline(currentGen: Int, snapshot: OvernightSnapshot?): OvernightSnapshot? {
+        overnightExpiryJob?.cancel()
+        if (snapshot?.phase != OvernightPhase.EXIT) return snapshot
+
+        val deadline = snapshot.remindersUntil
+        val receivedAt = now()
+        if (deadline == null || !receivedAt.isBefore(deadline)) {
+            return snapshot.copy(phase = OvernightPhase.WAITING, reminders = emptyList(), remindersUntil = null)
+        }
+
+        var nextDeadline: Instant = deadline
+        val reminders = snapshot.reminders.map { reminder ->
+            val exceptionDeadline = reminder.exceptionValidUntil
+            when {
+                reminder.exceptionObserved != true -> reminder
+                exceptionDeadline == null || !receivedAt.isBefore(exceptionDeadline) ->
+                    reminder.copy(exceptionObserved = null, exceptionAsOf = null, exceptionValidUntil = null)
+                else -> {
+                    nextDeadline = minOf(nextDeadline, exceptionDeadline)
+                    reminder
+                }
+            }
+        }
+        val current = snapshot.copy(reminders = reminders)
+
+        overnightExpiryJob = scope.launch {
+            delay(Duration.between(receivedAt, nextDeadline).toMillis().coerceAtLeast(1L))
+            if (accept(currentGen)) {
+                overnightExpiryJob = null
+                val updated = trackOvernightDeadline(currentGen, current)
+                _state.update { it.copy(overnight = updated) }
+            }
+        }
+        return current
     }
 
     fun searchStocks(query: String) {

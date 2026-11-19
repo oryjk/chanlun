@@ -53,6 +53,8 @@ def main():
         registration = ThreadingHTTPServer(('127.0.0.1', 0), Registration)
         Thread(target=registration.serve_forever, daemon=True).start()
         os.environ.update(CHANLUN_RANKING_ENABLED='false', CHANLUN_APPLE_ENABLED='false',
+                          CHANLUN_EMAIL_AUTH_ENABLED='false',
+                          CHANLUN_OVERNIGHT_ENABLED='false',
                           CHANLUN_RANKING_STORE_PATH=str(Path(directory) / 'rankings.sqlite3'),
                           CHANLUN_SESSION_SECRET='isolated-http-smoke-session-secret-at-least-32',
                           CHANLUN_REGISTRATION_API_BASE=f'http://127.0.0.1:{registration.server_port}/api/v1/app')
@@ -85,6 +87,10 @@ def main():
                         cookie = response.headers.get('Set-Cookie', '')
                         row['ok'] &= 'HttpOnly' in cookie and 'smoke-registration-token' not in json.dumps(data)
                         row['cookie'] = cookie.split(';')[0]
+                    if name == 'overnight pending snapshot':
+                        row['ok'] &= (response.headers.get('Cache-Control') == 'no-store'
+                                      and data['phase'] == 'waiting' and data['status'] == 'pending'
+                                      and data['candidates'] == [] and data['reminders'] == [])
             except HTTPError as error:
                 row = {'name':name,'status':error.code,'ok':error.code == expected}
             except (URLError, TimeoutError, OSError) as error:
@@ -97,6 +103,7 @@ def main():
             request('CORS', '/api/health', headers={'Origin':'https://smoke.example'})
             request('timeframes', '/api/timeframes')
             request('persisted ranking pending', '/api/rankings')
+            request('overnight pending snapshot', '/api/methods/overnight')
             request('invalid security', '/api/chan?secid=invalid', 400)
             request('guest H5 session', '/api/auth/session')
             login = request('H5 code login', '/api/auth/webview-login', body={'code':'smoke-code'})

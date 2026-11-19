@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.assertCountEquals
@@ -41,6 +45,11 @@ import cn.oryjk.changuan.domain.MarketGuidance
 import cn.oryjk.changuan.domain.MarketQuote
 import cn.oryjk.changuan.domain.MarketSnapshot
 import cn.oryjk.changuan.domain.MarketSummary
+import cn.oryjk.changuan.domain.OvernightCandidate
+import cn.oryjk.changuan.domain.OvernightCandidateStatus
+import cn.oryjk.changuan.domain.OvernightPhase
+import cn.oryjk.changuan.domain.OvernightSnapshot
+import cn.oryjk.changuan.domain.OvernightStatus
 import cn.oryjk.changuan.domain.Pen
 import cn.oryjk.changuan.domain.QuotePoint
 import cn.oryjk.changuan.domain.RankingBoard
@@ -59,6 +68,7 @@ import cn.oryjk.changuan.domain.Zhongshu
 import cn.oryjk.changuan.presentation.AppUiState
 import cn.oryjk.changuan.presentation.AuthMode
 import cn.oryjk.changuan.presentation.ChanGuanTheme
+import cn.oryjk.changuan.presentation.RankingMethod
 import cn.oryjk.changuan.presentation.designsystem.AssetDetailSheetHost
 import cn.oryjk.changuan.presentation.designsystem.MainBottomBar
 import cn.oryjk.changuan.presentation.screens.AccountScreen
@@ -961,6 +971,69 @@ class ClarityUiScreenshotTest {
         composeRule.onAllNodesWithText("候选").assertCountEquals(0)
 
         captureAllWindows("ranking_expanded_light.png", darkTheme = false)
+    }
+
+    @Test
+    fun switchToOvernightRankingAndOpenCandidate() {
+        val stock = Stock("000651.SZ", "000651", "格力电器", "深A")
+        val observedAt = Instant.parse("2026-11-19T06:38:20Z")
+        val snapshot = OvernightSnapshot(
+            tradeDate = "2026-11-19",
+            phase = OvernightPhase.SCANNING,
+            observedAt = observedAt,
+            historySessions = 20,
+            universeCount = 3400,
+            freshCount = 3370,
+            matchedCount = 1,
+            minuteCheckedCount = 1,
+            elapsedMillis = 235,
+            maxQuoteAgeSeconds = 4.25,
+            status = OvernightStatus.PARTIAL,
+            candidates = listOf(
+                OvernightCandidate(
+                    stock = stock,
+                    price = 35.32,
+                    changePercent = 3.35,
+                    volumeRatio = 1.15,
+                    turnoverRate = 5.25,
+                    totalMarketCap = 19_880_000_000.0,
+                    limitUpDate = "2026-11-11",
+                    asOf = observedAt,
+                    averagePrice = 35.28,
+                    benchmarkChangePercent = 0.65,
+                    pullbackAt = observedAt.minusSeconds(20),
+                    status = OvernightCandidateStatus.PULLBACK,
+                    reason = "尾盘回踩分时均价，价格回到均线上方",
+                    minuteAt = observedAt.minusSeconds(20),
+                    minuteChangePercent = 3.20,
+                ),
+            ),
+            reminders = emptyList(),
+        )
+        var opened: Stock? = null
+        val state = sampleState(dark = true).copy(tab = RootTab.RANKING, overnight = snapshot)
+        composeRule.setContent {
+            var method by remember { mutableStateOf(RankingMethod.CHAN) }
+            PreviewScaffold(darkTheme = true, tab = RootTab.RANKING) { modifier ->
+                RankingScreen(
+                    state = state.copy(rankingMethod = method),
+                    onRefresh = {},
+                    onSelectStock = { opened = it },
+                    modifier = modifier,
+                    applyStatusBarPadding = false,
+                    onSelectMethod = { method = it },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("隔夜套利").performClick()
+        composeRule.onNodeWithText("尾盘扫描中").assertExists()
+        composeRule.onNodeWithText("观察到回踩", substring = true).assertExists()
+        composeRule.onNodeWithText("同分钟 14:38  个股 +3.20%  沪深300 +0.65%", substring = true).assertExists()
+        composeRule.onNodeWithTag("ranking-tab-confirmed").assertDoesNotExist()
+        captureAllWindows("ranking_overnight_dark.png", darkTheme = true)
+        composeRule.onNodeWithText(stock.name).performClick()
+        composeRule.runOnIdle { assertEquals(stock, opened) }
     }
 
     @Test

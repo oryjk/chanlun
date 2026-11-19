@@ -3,11 +3,16 @@ package cn.oryjk.changuan.application
 import cn.oryjk.changuan.domain.AppLoginResult
 import cn.oryjk.changuan.domain.AppSession
 import cn.oryjk.changuan.domain.EmailCodeSent
+import cn.oryjk.changuan.domain.OvernightSnapshot
 
 class MarketUseCases(
     val reader: MarketReader,
     val writer: QuoteWriter,
 )
+
+class OvernightQuery(private val reader: OvernightReader) {
+    suspend fun snapshot(): OvernightSnapshot = reader.snapshot()
+}
 
 class TrackingUseCases(
     val reader: TrackingReader,
