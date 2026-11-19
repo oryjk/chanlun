@@ -52,6 +52,7 @@ backend/
 ### 登录与鉴权约定
 
 - H5 身份来自报名系统（`../registration_system`）小程序，不在 H5 自建账号：小程序 `pages/chanlun/index` 落地页默认登录后，以 web-view 打开缠观并带上一次性 `webview_code`（60 秒、单次有效）。原生 App 使用独立的 Apple 身份映射，见第七节。
+- 记金 iOS WebView 登录由记金服务端向 `POST /api/auth/sumly/tickets` 出示共享密钥，申请 60 秒单次票据，再由 iOS 向 `POST /api/auth/sumly/session` 兑换 15 分钟 HttpOnly Cookie。票据摘要存于独立 SQLite，消费使用原子删除。记金登录身份使用 `sumly:{user_id}` 命名空间，报名系统旧 Cookie 和数值身份保持兼容。
 - 前端 `main.jsx` 渲染前取出并抹掉地址栏中的 `webview_code` 等桥接参数，交给 `POST /api/auth/webview-login`；后端用 code 调报名系统 `/auth/webview-codes/exchange` 换 JWT、再读 `/users/me`，然后签发缠观自己的 HttpOnly cookie `chanlun_session`（HMAC 签名、无状态、默认 30 天）。报名系统 JWT 不下发到前端。
 - 不登录也能使用全部行情功能。收藏、跟踪等个人功能必须通过 `useAuth().requireLogin(action)` 调用：已登录直接执行，游客弹出登录引导。
 - 登录引导按环境区分：小程序 web-view 内通过 `wx.miniProgram.redirectTo` 回到落地页登录并自动返回原页面；微信内浏览器或普通浏览器调 `GET /api/auth/mini-program-link` 获取报名系统生成的 URL Link。回跳参数只保留 `secid`、`timeframe`、`view`，且只允许 `[A-Za-z0-9._=&-]`，与小程序和报名系统规则一致。
@@ -137,6 +138,7 @@ frontend/src/
 - 微信开发者工具可能使用较旧的网页内核，读取数组末项使用下标，不依赖 `Array.prototype.at`；前端 Vite 开发服务会在应用模块前注入启动错误提示，白屏时直接显示错误与浏览器信息并隐藏 webview 桥接参数，正式构建不包含该提示。
 - 生产部署在报名系统已配置的 web-view 业务域名下：`https://match.oryjk.cn/chanlun/`。前端以 `CHANLUN_BASE_PATH=/chanlun/ bun run build` 构建，API 请求自动带上该前缀，由 nginx 把 `/chanlun/api/` 转发到缠观后端。
 - 登录相关环境变量：`CHANLUN_REGISTRATION_API_BASE`（报名系统 App API 根路径，默认 `http://127.0.0.1:18081/api/v1/app`）、`CHANLUN_SESSION_SECRET`（至少 32 字符；未配置时使用临时密钥，重启后登录态失效）、`CHANLUN_SESSION_MAX_AGE`（秒，默认 30 天）、`CHANLUN_SESSION_COOKIE_SECURE`（HTTPS 部署设为 `true`）。
+- 记金桥接环境变量：`CHANLUN_SUMLY_BRIDGE_SECRET`（至少 32 字符，缺省时关闭桥接）、`CHANLUN_SUMLY_TICKET_STORE_PATH`（默认 `var/accounts/sumly-webview.sqlite3`）、`CHANLUN_SUMLY_BRIDGE_ISSUER_IP`（可选的记金服务端直连 IP；配置后签发接口拒绝其他来源及带 `X-Forwarded-For` 或 `Forwarded` 的请求）。公开入口只转发兑换接口。
 - 榜单环境变量：`CHANLUN_RANKING_RUN_AT`（北京时间，默认 `15:30`，必须不早于 `15:00`）、`CHANLUN_RANKING_WORKERS`（默认 `4`，范围 1–16）、`CHANLUN_RANKING_STORE_PATH`（默认 `var/rankings/rankings.sqlite3`）、`CHANLUN_RANKING_ENABLED`（默认 `true`，隔离测试可设 `false`）。
 
 ## 五、变更检查

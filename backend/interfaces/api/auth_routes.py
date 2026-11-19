@@ -19,10 +19,12 @@ def commands(request: Request) -> CommandServices:
 
 
 def session_response(identity: UserIdentity | None) -> SessionResponse:
-    return SessionResponse(
-        authenticated=identity is not None,
-        user=UserIdentityResponse.model_validate(identity) if identity else None,
-    )
+    if identity is None:
+        return SessionResponse(authenticated=False, user=None)
+    user_id = identity.tracking_key if identity.source == "sumly" else identity.user_id
+    return SessionResponse(authenticated=True, user=UserIdentityResponse(
+        user_id=user_id, nickname=identity.nickname, avatar_url=identity.avatar_url,
+    ))
 
 
 @router.post("/webview-login", response_model=SessionResponse)

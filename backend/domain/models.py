@@ -312,3 +312,8 @@ class UserIdentity:
     user_id: int
     nickname: str
     avatar_url: str | None = None
+    source: str = "registration"
+
+    @property
+    def tracking_key(self) -> str:
+        return f"sumly:{self.user_id}" if self.source == "sumly" else f"h5:{self.user_id}"

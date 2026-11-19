@@ -35,6 +35,8 @@ class SignedSessionCodec:
             "avatar": identity.avatar_url,
             "exp": int(self._clock()) + self.max_age_seconds,
         }
+        if identity.source == "sumly":
+            payload["source"] = identity.source
         body = _encode(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         return f"{body}.{self._sign(body)}"
 
@@ -46,10 +48,14 @@ class SignedSessionCodec:
             payload = json.loads(_decode(body))
             if int(payload["exp"]) <= self._clock():
                 return None
+            source = payload.get("source", "registration")
+            if source not in ("registration", "sumly"):
+                return None
             return UserIdentity(
                 user_id=int(payload["uid"]),
                 nickname=str(payload["nick"]),
                 avatar_url=payload.get("avatar"),
+                source=source,
             )
         except (ValueError, KeyError, TypeError):
             return None
